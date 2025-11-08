@@ -1,5 +1,5 @@
 
-# NEON LUNCH DUTY ++
+# Last Hope
 
 An arcade survival prototype built with `pygame`. Pilot a neon courier as endless enemy waves crash through the lunch plaza, trade coins for pop-up upgrades, and push your luck with a heat-based blaster system. The project lives in this repo as a focused prototype (`main.py`) plus a couple of helper scripts.
 
