@@ -6,7 +6,6 @@ An arcade survival prototype built with `pygame`. Pilot a neon courier as endles
 ## Requirements
 - Python 3.10+ (any modern CPython works)
 - `pygame` 2.5+
-- (optional) `pyautogui` and `keyboard` if you want to experiment with `typing_effect.py`
 
 ## Getting Started
 1. Create a virtual environment (recommended):
@@ -16,9 +15,8 @@ An arcade survival prototype built with `pygame`. Pilot a neon courier as endles
    ```
 2. Install dependencies:
    ```bash
-   pip install pygame pyautogui keyboard
+   pip install pygame
    ```
-   Only `pygame` is required to play; the other two packages are for the auto-typing helper script.
 3. Launch the prototype:
    ```bash
    python main.py
@@ -52,16 +50,8 @@ An arcade survival prototype built with `pygame`. Pilot a neon courier as endles
 
 ## Repository Layout
 - `main.py` – the primary NEON LUNCH DUTY ++ gameplay loop.
-- `typing_effect.py` – a PyAutoGUI/keyboard helper that can auto-type scripts or flavor text for demos. Requires desktop control permissions; use with caution.
-- `test.py` – an experimental scratchpad mirroring earlier gameplay logic.
 - `index.html` – placeholder for a future web landing page.
 
-## Typing Effect Helper
-`typing_effect.py` loads a script, types it into any focused window with a synthetic “hacker” cadence, and supports keyboard interrupts. Start it with:
-```bash
-python typing_effect.py
-```
-Make sure PyAutoGUI and keyboard have the necessary OS permissions before running, and keep your cursor in a safe text editor when the script is active.
 
 ## Roadmap Ideas
 - Add SFX/music hooks and polished HUD art.
@@ -69,4 +59,4 @@ Make sure PyAutoGUI and keyboard have the necessary OS permissions before runnin
 - Persist high scores to a local file.
 - Port the prototype loop to a web build if `pygame-ce` or a WASM wrapper becomes viable.
 
-Have fun defending the plaza, and feel free to fork the prototype for your own neon experiments.
+Have fun defending the plaza, and feel free to fork the prototype for your own experiments.
