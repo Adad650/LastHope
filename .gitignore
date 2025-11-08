@@ -1,0 +1,5 @@
+/.DS_Store
+/.venv
+/__pycache__
+/test.py
+/typing_effect.py
