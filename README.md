@@ -1,8 +1,7 @@
 
 # Last Hope
 
-An arcade survival prototype built with `pygame`. Pilot a neon courier as endless enemy waves crash through the lunch plaza, trade coins for pop-up upgrades, and push your luck with a heat-based blaster system. The project lives in this repo as a focused prototype (`main.py`) plus a couple of helper scripts.
-
+An arcade survival prototype built with `pygame`. Pilot a rebel as endless enemy waves crash through the lunch plaza, trade coins for pop-up upgrades, and push your luck with a heat-based blaster system. The project lives in this repo as a focused prototype (`main.py`).
 ## Requirements
 - Python 3.10+ (any modern CPython works)
 - `pygame` 2.5+
@@ -49,7 +48,7 @@ An arcade survival prototype built with `pygame`. Pilot a neon courier as endles
 | coin printer | Doubled coin value |
 
 ## Repository Layout
-- `main.py` – the primary NEON LUNCH DUTY ++ gameplay loop.
+- `main.py` – the primary Last Hope gameplay loop.
 - `index.html` – placeholder for a future web landing page.
 
 
