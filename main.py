@@ -112,6 +112,7 @@ def buildGameState():
         "shopTimer": 20,
         "shopCards": [],
         "coinBonus": 1,
+        "shopNoteTimer": 0.0,
         "dialog": [
             "dear dystopia journal: still no pizza",
             "i coded this resistance sim so people remember",
@@ -256,7 +257,7 @@ def movePlayer(player, dt, keys):
     dashSpeed = 1.65 if player["dash"] > 0 else 1
     player["pos"] += direction * player["speed"] * dashSpeed * dt
     player["pos"].x = max(player["radius"], min(width - player["radius"], player["pos"].x))
-    player["pos"].y = max(player["radius"], min(cityFloor - 30, player["pos"].y))
+    player["pos"].y = max(player["radius"], min(cityFloor - player["radius"], player["pos"].y))
     player["cool"] = max(0, player["cool"] - dt)
     player["heat"] = max(0, player["heat"] - dt * player["coolRate"])
     player["dash"] = max(0, player["dash"] - dt)
@@ -329,7 +330,7 @@ def updateCoins(state, dt):
             coin["vel"].y = 0
 
 
-def handleCollisions(state):
+def handleCollisions(state, dt):
     player = state["player"]
     for enemy in list(state["enemies"]):
         for shot in list(state["shots"]):
@@ -343,8 +344,8 @@ def handleCollisions(state):
             dropCoins(state, enemy["pos"])
             continue
         if enemy["pos"].distance_to(player["pos"]) < enemy["size"] + player["radius"]:
-            player["health"] -= 35 * (1 / fps)
-            player["heat"] += 0.1
+            player["health"] -= 35 * dt
+            player["heat"] += 0.1 * dt * fps
     if player["health"] <= 0 and not state["gameOver"]:
         state["gameOver"] = True
         state["shopActive"] = False
@@ -363,7 +364,7 @@ def updateGame(state, dt):
     state["shots"] = [shot for shot in state["shots"] if updateShot(shot, dt)]
     for enemy in state["enemies"]:
         updateEnemy(enemy, dt, state["player"]["pos"])
-    handleCollisions(state)
+    handleCollisions(state, dt)
     updateCoins(state, dt)
     updateWaves(state, dt)
 
@@ -393,8 +394,8 @@ def buyOption(state, index):
         return
     state["coinsBank"] -= card["cost"]
     applyUpgrade(state, card["effect"])
-    state["shopMessage"] = f"bought {card['name']}"
     closeShop(state)
+    state["shopMessage"] = f"bought {card['name']}"
 
 
 def applyUpgrade(state, effect):
