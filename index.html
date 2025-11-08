@@ -83,7 +83,7 @@
     }
 
     function makeShot(player, target) {
-      if (player.cool > 0 || player.heat >= 3) return null;
+      if (player.cool > 0 || player.heat >= 5) return null;
       let dx = target.x - player.pos.x;
       let dy = target.y - player.pos.y;
       const len = Math.hypot(dx, dy) || 1;
