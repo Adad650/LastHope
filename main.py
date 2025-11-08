@@ -93,7 +93,7 @@ def createCoin(position):
 
 def buildGameState():
     screen = pygame.display.set_mode((width, height))
-    pygame.display.set_caption("NEON LUNCH DUTY ++")
+    pygame.display.set_caption("Last Hope")
     state = {
         "screen": screen,
         "clock": pygame.time.Clock(),
@@ -191,7 +191,7 @@ def drawHud(screen, state):
 
 
 def drawMenu(screen, dialog):
-    title = bigFont.render("NEON LUNCH DUTY", True, neonBlue)
+    title = bigFont.render("LAST HOPE", True, neonBlue)
     screen.blit(title, (width // 2 - title.get_width() // 2, 160))
     for idx, line in enumerate(dialog):
         txt = uiFont.render(line, True, (230, 230, 230))
