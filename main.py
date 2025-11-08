@@ -330,6 +330,13 @@ def updateCoins(state, dt):
             coin["vel"].y = 0
 
 
+def updateShopNote(state, dt):
+    if state["shopNoteTimer"] > 0:
+        state["shopNoteTimer"] = max(0, state["shopNoteTimer"] - dt)
+        if state["shopNoteTimer"] == 0 and not state["shopActive"]:
+            state["shopMessage"] = ""
+
+
 def handleCollisions(state, dt):
     player = state["player"]
     for enemy in list(state["enemies"]):
@@ -367,6 +374,7 @@ def updateGame(state, dt):
     handleCollisions(state, dt)
     updateCoins(state, dt)
     updateWaves(state, dt)
+    updateShopNote(state, dt)
 
 
 # --------------------------- shop & upgrades ------------------------------
@@ -374,6 +382,7 @@ def updateGame(state, dt):
 def openShop(state):
     state["shopActive"] = True
     state["shopMessage"] = "shop paused reality"
+    state["shopNoteTimer"] = 0.0
     picks = random.sample(state["shopPool"], k=min(5, len(state["shopPool"])) )
     state["shopCards"] = picks
 
@@ -382,6 +391,7 @@ def closeShop(state):
     state["shopActive"] = False
     state["shopMessage"] = ""
     state["shopTimer"] = random.uniform(18, 28)
+    state["shopNoteTimer"] = 0.0
 
 
 def buyOption(state, index):
@@ -391,11 +401,13 @@ def buyOption(state, index):
     card = state["shopCards"][index]
     if state["coinsBank"] < card["cost"]:
         state["shopMessage"] = "not enough coin juice"
+        state["shopNoteTimer"] = 1.6
         return
     state["coinsBank"] -= card["cost"]
     applyUpgrade(state, card["effect"])
     closeShop(state)
     state["shopMessage"] = f"bought {card['name']}"
+    state["shopNoteTimer"] = 2.5
 
 
 def applyUpgrade(state, effect):
