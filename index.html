@@ -46,6 +46,83 @@
       heat: '#ffb478'
     };
 
+      const runFrameUrls = [
+        'https://hc-cdn.hel1.your-objectstorage.com/s/v3/f057b96cf4eb7524649475deb1bbbced63d2eb98_soldier_1_run_0.png',
+        'https://hc-cdn.hel1.your-objectstorage.com/s/v3/09bf02bfc958869332475e95ecd3d7265c1bcc84_soldier_1_run_1.png',
+        'https://hc-cdn.hel1.your-objectstorage.com/s/v3/82a8d5787e38e0c352ed74bd632d36ad0fdcf7b8_soldier_1_run_2.png',
+        'https://hc-cdn.hel1.your-objectstorage.com/s/v3/56f714d56382ef375f13214ca791470829918637_soldier_1_run_3.png',
+        'https://hc-cdn.hel1.your-objectstorage.com/s/v3/b8352c549f3f1a024ddc265addf418c90417f5fc_soldier_1_run_4.png',
+        'https://hc-cdn.hel1.your-objectstorage.com/s/v3/994f529461a49160bedce52d3371a880061b4b5b_soldier_1_run_5.png',
+        'https://hc-cdn.hel1.your-objectstorage.com/s/v3/162c9e48d68400f14ad288a4cfd6a76b079ee7c1_soldier_1_run_6.png',
+        'https://hc-cdn.hel1.your-objectstorage.com/s/v3/1fb637127c1d8cbe3723c36097bef3d10117c300_soldier_1_run_7.png'
+      ];
+    const idleUrls = [
+      'https://hc-cdn.hel1.your-objectstorage.com/s/v3/b07b165b7875977d4f1096a85ecf248e4cf48694_soldier_1_idle_0.png',
+      'https://hc-cdn.hel1.your-objectstorage.com/s/v3/da06c835f73716e3874a76a6a0e64917f0524fd0_soldier_1_idle_1.png',
+      'https://hc-cdn.hel1.your-objectstorage.com/s/v3/a2d13e828d3f3a923d8967b616fd65b95413fc5b_soldier_1_idle_2.png',
+      'https://hc-cdn.hel1.your-objectstorage.com/s/v3/39c56624ff3d9ad9049a8700e4f30d5b8b189bb9_soldier_1_idle_3.png',
+      'https://hc-cdn.hel1.your-objectstorage.com/s/v3/872a4296963746f2e8afe0a8dd91a15b91f8fb62_soldier_1_idle_4.png'
+    ];
+    const deadUrls = [
+      'https://hc-cdn.hel1.your-objectstorage.com/s/v3/f6c30ae20c0f193e59f5528702199b02688fc8c1_soldier_1_dead_0.png',
+      'https://hc-cdn.hel1.your-objectstorage.com/s/v3/e6da5d24c3be03a76c7312c65ecca4b58d27fab6_soldier_1_dead_1.png',
+      'https://hc-cdn.hel1.your-objectstorage.com/s/v3/df526838de595b128df317ede0f338798ecbf5a4_soldier_1_dead_2.png',
+      'https://hc-cdn.hel1.your-objectstorage.com/s/v3/0f003e13cd031bf24f849762fc7e230edc3bab2b_soldier_1_dead_3.png',
+      'https://hc-cdn.hel1.your-objectstorage.com/s/v3/079a039558a508800f76b8e836ec2c8e0787ecef_soldier_1_dead_4.png',
+      'https://hc-cdn.hel1.your-objectstorage.com/s/v3/493090514e844022e58b133f2e370396e0246662_soldier_1_dead_5.png',
+      'https://hc-cdn.hel1.your-objectstorage.com/s/v3/5c79de358501de568a1c4ac77f80e888ba9af587_soldier_1_dead_6.png',
+      'https://hc-cdn.hel1.your-objectstorage.com/s/v3/5c79de358501de568a1c4ac77f80e888ba9af587_soldier_1_dead_7.png'
+    ];
+    const reloadUrls = [
+      'https://hc-cdn.hel1.your-objectstorage.com/s/v3/26d7bf5787f6b216cfc993955c7d79238b975df3_soldier_1_reload_0.png',
+      'https://hc-cdn.hel1.your-objectstorage.com/s/v3/6a3e4fa7c015229738da03854105bc23cb270341_soldier_1_reload_1.png',
+      'https://hc-cdn.hel1.your-objectstorage.com/s/v3/eab6c52f42262b134687ee203c8cb81b1418659d_soldier_1_reload_2.png',
+      'https://hc-cdn.hel1.your-objectstorage.com/s/v3/bfa8d7c23f6f91ba3f5ec9fef39d06b6104fb166_soldier_1_reload_3.png',
+      'https://hc-cdn.hel1.your-objectstorage.com/s/v3/14fe6a2512d7f163b2ec0ae892ee0ad68ee38ce3_soldier_1_reload_4.png',
+      'https://hc-cdn.hel1.your-objectstorage.com/s/v3/3b80193640c51a07f30e49b4282747f13f7842bb_soldier_1_reload_5.png'
+    ];
+    const shootUrls = [
+      'https://hc-cdn.hel1.your-objectstorage.com/s/v3/d0740585aa0dd41cb72e4d06c4c720cc903c5691_soldier_1_shot_0.png',
+      'https://hc-cdn.hel1.your-objectstorage.com/s/v3/b07b165b7875977d4f1096a85ecf248e4cf48694_soldier_1_shot_1.png'
+    ];
+    const PLAYER_SCALE = 3;
+    let runSpriteRadius = 24 * PLAYER_SCALE;
+    let state;
+    const updateRadiusFromFrame = (() => {
+      let initialized = false;
+      return (img) => {
+        if (initialized || !img.width || !img.height) return;
+        initialized = true;
+        const minDim = Math.min(img.width, img.height);
+        runSpriteRadius = Math.round((minDim / 2) * PLAYER_SCALE * 0.6);
+        if (state && state.player) {
+          state.player.radius = runSpriteRadius;
+        }
+      };
+    })();
+    const loadFrames = (urls, onLoad) =>
+      urls.map((url) => {
+        const img = new Image();
+        img.onload = () => onLoad?.(img);
+        img.src = url;
+        return img;
+      });
+    const SHOOT_ANIM_DURATION = 0.18;
+    const ANIM_SPEEDS = {
+      idle: 0.22,
+      run: 0.08,
+      reload: 0.12,
+      death: 0.28,
+      shoot: 0.12
+    };
+    const animationFrames = {
+      idle: loadFrames(idleUrls, updateRadiusFromFrame),
+      run: loadFrames(runFrameUrls, updateRadiusFromFrame),
+      reload: loadFrames(reloadUrls),
+      death: loadFrames(deadUrls),
+      shoot: loadFrames(shootUrls)
+    };
+
     const shopPool = [
       { name: 'heat sink', desc: 'vents faster cool down', cost: 6, effect: 'heatSink' },
       { name: 'side hustle', desc: '+1 shot damage', cost: 8, effect: 'damage' },
@@ -69,31 +146,60 @@
     function makePlayer() {
       return {
         pos: { x: WIDTH / 2, y: HEIGHT / 2 },
-        radius: 24,
+        radius: runSpriteRadius,
         speed: 360,
         maxHealth: 130,
         health: 130,
-        cool: 0,
         heat: 0,
         dash: 0,
         damage: 1,
         coolRate: 0.8,
-        fireDelay: 0.18
+        fireDelay: 0.18,
+        ammo: 10,
+        maxAmmo: 10,
+        isReloading: false,
+        reloadTimer: 0,
+        reloadTime: 1.5,
+        animState: 'idle',
+        animFrame: 0,
+        animTimer: 0,
+        animSpeeds: ANIM_SPEEDS,
+        isMoving: false,
+        facing: 1,
+        shootTimer: 0,
+        isDead: false,
+        deathPlayed: false
       };
     }
 
     function makeShot(player, target) {
-      if (player.cool > 0 || player.heat >= 3) return null;
+      // Can't shoot while cooling down, reloading, or out of ammo
+      if (player.cool > 0 || player.isReloading || player.ammo <= 0) return null;
+      
       let dx = target.x - player.pos.x;
       let dy = target.y - player.pos.y;
       const len = Math.hypot(dx, dy) || 1;
       dx /= len;
       dy /= len;
-      const speed = 650 + player.heat * 40;
+      
+      const speed = 650 + player.heat * 30;
+      
       player.cool = player.fireDelay;
-      player.heat = Math.min(4, player.heat + 0.32);
+      player.ammo--;
+      player.shootTimer = SHOOT_ANIM_DURATION;
+      
+      // Start reloading if out of ammo
+      if (player.ammo <= 0) {
+        player.isReloading = true;
+        player.reloadTimer = player.reloadTime;
+      }
+      
+      const spawnOffset = Math.min(player.radius + 8, 30);
       return {
-        pos: { x: player.pos.x, y: player.pos.y },
+        pos: {
+          x: player.pos.x + dx * spawnOffset,
+          y: player.pos.y + dy * spawnOffset
+        },
         vel: { x: dx * speed, y: dy * speed },
         damage: player.damage,
         life: 1.3,
@@ -159,7 +265,7 @@
       };
     }
 
-    let state = makeState();
+    state = makeState();
 
     function randRange(min, max) {
       return Math.random() * (max - min) + min;
@@ -177,9 +283,14 @@
       if (keys['KeyA'] || keys['ArrowLeft']) dx -= 1;
       if (keys['KeyD'] || keys['ArrowRight']) dx += 1;
       const len = Math.hypot(dx, dy);
-      if (len > 0) {
+      const moving = len > 0;
+      player.isMoving = moving;
+      if (moving) {
         dx /= len;
         dy /= len;
+        if (Math.abs(dx) > 0.01) {
+          player.facing = dx > 0 ? 1 : -1;
+        }
       }
       const dashSpeed = player.dash > 0 ? 1.65 : 1;
       player.pos.x += dx * player.speed * dashSpeed * dt;
@@ -195,6 +306,61 @@
       if (player.heat > 2.7 || player.dash > 0) return;
       player.dash = 0.3;
       player.heat = Math.min(4, player.heat + 0.5);
+    }
+
+    function updatePlayerAnimation(player, dt) {
+      // Update reload timer and handle auto-reload completion
+      if (player.isReloading) {
+        player.reloadTimer -= dt;
+        if (player.reloadTimer <= 0) {
+          player.ammo = player.maxAmmo;
+          player.isReloading = false;
+        }
+      }
+      
+      player.shootTimer = Math.max(0, player.shootTimer - dt);
+      
+      // Determine animation state
+      let desiredState = 'idle';
+      if (player.isDead && animationFrames.death.length) {
+        desiredState = 'death';
+      } else if (player.isReloading && animationFrames.reload.length) {
+        desiredState = 'reload';
+      } else if (player.shootTimer > 0 && animationFrames.shoot.length) {
+        desiredState = 'shoot';
+      } else if (player.isMoving && animationFrames.run.length) {
+        desiredState = 'run';
+      } else if (animationFrames.idle.length) {
+        desiredState = 'idle';
+      }
+      if (player.animState !== desiredState) {
+        player.animState = desiredState;
+        player.animFrame = 0;
+        player.animTimer = 0;
+        if (desiredState === 'death') {
+          player.deathPlayed = false;
+        }
+      }
+      const frames = animationFrames[player.animState] && animationFrames[player.animState].length
+        ? animationFrames[player.animState]
+        : animationFrames.idle;
+      if (!frames.length) return;
+      const frameDuration = player.animSpeeds[player.animState] ?? 0.12;
+      player.animTimer += dt;
+      if (player.animState === 'death') {
+        while (player.animTimer >= frameDuration && player.animFrame < frames.length - 1) {
+          player.animTimer -= frameDuration;
+          player.animFrame += 1;
+        }
+        if (player.animFrame >= frames.length - 1) {
+          player.deathPlayed = true;
+        }
+        return;
+      }
+      while (player.animTimer >= frameDuration) {
+        player.animTimer -= frameDuration;
+        player.animFrame = (player.animFrame + 1) % frames.length;
+      }
     }
 
     function updateShots(state, dt) {
@@ -288,6 +454,8 @@
         }
       }
       if (player.health <= 0 && !state.gameOver) {
+        player.isDead = true;
+        player.shootTimer = 0;
         state.gameOver = true;
         state.shopActive = false;
       }
@@ -375,15 +543,33 @@
     }
 
     function updateGame(state, dt) {
-      movePlayer(state.player, dt);
+      const player = state.player;
+      
+      // Handle player input and movement
+      movePlayer(player, dt);
+      
+      // Handle dashing
       if (keys['ShiftLeft'] || keys['ShiftRight']) {
-        dashPlayer(state.player);
+        dashPlayer(player);
       }
-      const wantsShot = mouse.down || keys['Space'];
+      
+      // Handle manual reload with 'R' key
+      if (keys['KeyR'] && !player.isReloading && player.ammo < player.maxAmmo) {
+        player.isReloading = true;
+        player.reloadTimer = player.reloadTime;
+      }
+      
+      // Update animations
+      updatePlayerAnimation(player, dt);
+      
+      // Handle shooting
+      const wantsShot = (mouse.down || keys['Space']) && !player.isReloading;
       if (wantsShot) {
-        const shot = makeShot(state.player, mouse);
+        const shot = makeShot(player, mouse);
         if (shot) state.shots.push(shot);
       }
+      
+      // Update game systems
       updateShots(state, dt);
       updateEnemies(state, dt);
       handleCollisions(state, dt);
@@ -410,14 +596,35 @@
 
     function drawPlayer() {
       const p = state.player;
-      ctx.beginPath();
-      ctx.fillStyle = p.dash > 0 ? 'rgb(180,255,255)' : colors.neonBlue;
-      ctx.arc(p.pos.x, p.pos.y, p.radius, 0, Math.PI * 2);
-      ctx.fill();
+      const frames = animationFrames[p.animState] && animationFrames[p.animState].length
+        ? animationFrames[p.animState]
+        : animationFrames.idle;
+      if (frames && frames.length) {
+        const frame = frames[p.animFrame % frames.length];
+        const width = frame.width * PLAYER_SCALE;
+        const height = frame.height * PLAYER_SCALE;
+        ctx.save();
+        ctx.translate(p.pos.x, p.pos.y);
+        ctx.scale(p.facing, 1);
+        ctx.drawImage(frame, -width / 2, -height / 2, width, height);
+        ctx.restore();
+      } else {
+        ctx.beginPath();
+        ctx.fillStyle = colors.neonBlue;
+        ctx.arc(p.pos.x, p.pos.y, p.radius, 0, Math.PI * 2);
+        ctx.fill();
+      }
       ctx.beginPath();
       ctx.fillStyle = colors.neonPink;
       ctx.arc(p.pos.x, p.pos.y - p.radius + 4, 6, 0, Math.PI * 2);
       ctx.fill();
+      if (p.dash > 0) {
+        ctx.beginPath();
+        ctx.strokeStyle = 'rgb(180,255,255)';
+        ctx.lineWidth = 2;
+        ctx.arc(p.pos.x, p.pos.y, p.radius, 0, Math.PI * 2);
+        ctx.stroke();
+      }
     }
 
     function drawEnemies() {
@@ -457,30 +664,51 @@
     }
 
     function drawHud() {
-      const p = state.player;
-      ctx.fillStyle = 'rgba(55,35,45,1)';
-      ctx.fillRect(30, 30, 340, 26);
-      ctx.fillStyle = colors.neonPink;
-      const hpRatio = Math.min(1, Math.max(0, p.health) / p.maxHealth);
-      ctx.fillRect(30, 30, 340 * hpRatio, 26);
-      ctx.fillStyle = '#fff';
-      ctx.font = '20px "Trebuchet MS", sans-serif';
+      const player = state.player;
+      const barWidth = 200;
+      const barHeight = 8;
+      const spacing = 36;
+      let yPos = 20;
       ctx.textAlign = 'left';
-      const hpLabel = Math.max(0, Math.round(p.health));
-      ctx.fillText(`HP ${hpLabel}/${p.maxHealth}`, 40, 50);
-      ctx.fillStyle = 'rgb(215,255,200)';
-      ctx.fillText(`score ${state.score}`, WIDTH - 230, 50);
+      ctx.font = '14px "Trebuchet MS", sans-serif';
+      ctx.fillStyle = 'white';
+
+      const drawBar = (label, ratio, fillColor) => {
+        ctx.fillStyle = colors.dark;
+        ctx.fillRect(20, yPos + 12, barWidth, barHeight);
+        ctx.fillStyle = fillColor;
+        ctx.fillRect(20, yPos + 12, Math.max(0, Math.min(1, ratio)) * barWidth, barHeight);
+        ctx.fillStyle = 'white';
+        ctx.fillText(label, 20, yPos + 10);
+        yPos += spacing;
+      };
+
+      drawBar(
+        `HP: ${Math.ceil(player.health)}/${player.maxHealth}`,
+        player.health / player.maxHealth,
+        colors.neonPink
+      );
+
+      let ammoText = `AMMO: ${player.ammo}/${player.maxAmmo}`;
+      if (player.isReloading) {
+        const reloadProgress = 1 - player.reloadTimer / player.reloadTime;
+        ammoText += ` (RELOADING ${Math.ceil(reloadProgress * 100)}%)`;
+      }
+      drawBar(ammoText, player.ammo / player.maxAmmo, colors.neonBlue);
+
+      drawBar(`HEAT: ${player.heat.toFixed(1)}/4`, player.heat / 4, colors.heat);
+
+      ctx.textAlign = 'right';
+      ctx.fillStyle = 'white';
+      ctx.fillText(`SCORE: ${state.score}`, WIDTH - 20, 30);
+      ctx.fillText(`WAVE: ${state.wave}`, WIDTH - 20, 50);
       ctx.fillStyle = colors.coin;
-      ctx.fillText(`coins ${state.coinsBank}`, WIDTH - 230, 80);
-      ctx.fillStyle = 'rgb(200,220,255)';
-      ctx.fillText(`wave ${state.wave}`, WIDTH - 230, 110);
-      ctx.fillStyle = colors.heat;
-      ctx.fillText(`heat ${p.heat.toFixed(1)}/3`, 40, 78);
-      if (state.shopMessage) {
-        ctx.fillStyle = '#fff';
+      ctx.fillText(`COINS: ${state.coinsBank}`, WIDTH - 20, 70);
+
+      if (player.ammo < player.maxAmmo / 2 && !player.isReloading) {
+        ctx.fillStyle = 'yellow';
         ctx.textAlign = 'center';
-        ctx.fillText(state.shopMessage, WIDTH / 2, 30);
-        ctx.textAlign = 'left';
+        ctx.fillText('Press R to reload', WIDTH / 2, HEIGHT - 30);
       }
     }
 
@@ -508,7 +736,7 @@
       ctx.fillText('system failure', WIDTH / 2, HEIGHT / 2 - 20);
       ctx.fillStyle = '#fff';
       ctx.font = '28px "Trebuchet MS", sans-serif';
-      ctx.fillText('press R to reboot the rebellion', WIDTH / 2, HEIGHT / 2 + 30);
+      ctx.fillText('Refresh the page to play again', WIDTH / 2, HEIGHT / 2 + 30);
       ctx.textAlign = 'left';
     }
 
@@ -527,18 +755,20 @@
       ctx.strokeRect(px, py, panelWidth, panelHeight);
       ctx.fillStyle = '#fff';
       ctx.font = '22px "Trebuchet MS", sans-serif';
-      ctx.fillText(`pop-up shop: pick (1-${optionCount}) or skip (${optionCount + 1})`, px + 18, py + 30);
+      ctx.textAlign = 'center';
+      ctx.fillText(`pop-up shop: pick (1-${optionCount}) or skip (${optionCount + 1})`, px + panelWidth / 2, py + 30);
       cards.forEach((card, idx) => {
         const affordable = state.coinsBank >= card.cost;
         ctx.fillStyle = affordable ? 'rgb(200,255,220)' : 'rgb(130,130,130)';
-        ctx.fillText(`${idx + 1}) ${card.name} [${card.cost}c]`, px + 24, py + 60 + idx * 60);
+        ctx.fillText(`${idx + 1}) ${card.name} [${card.cost}c]`, px + panelWidth / 2, py + 60 + idx * 60);
         ctx.fillStyle = 'rgb(180,180,200)';
         ctx.font = '18px "Trebuchet MS", sans-serif';
-        ctx.fillText(card.desc, px + 32, py + 84 + idx * 60);
+        ctx.fillText(card.desc, px + panelWidth / 2, py + 84 + idx * 60);
         ctx.font = '22px "Trebuchet MS", sans-serif';
       });
       ctx.fillStyle = '#fff';
-      ctx.fillText(`${optionCount + 1}) close shop`, px + 24, py + panelHeight - 24);
+      ctx.fillText(`${optionCount + 1}) close shop`, px + panelWidth / 2, py + panelHeight - 24);
+      ctx.textAlign = 'left';
     }
 
     function draw() {
@@ -553,10 +783,6 @@
       if (state.gameOver) drawGameOver();
     }
 
-    function resetGame() {
-      state = makeState();
-    }
-
     window.addEventListener('keydown', (e) => {
       if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
         e.preventDefault();
@@ -564,9 +790,6 @@
       if (!e.repeat) keys[e.code] = true;
       if (e.code === 'Space' && state.menu) {
         state.menu = false;
-      }
-      if (e.code === 'KeyR') {
-        resetGame();
       }
       if (state.shopActive) {
         if (/^[0-9]$/.test(e.key)) {

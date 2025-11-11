@@ -1,3 +1,4 @@
+import os
 import random
 import sys
 
@@ -7,6 +8,7 @@ width, height = 1100, 720
 fps = 60
 cityFloor = height - 120
 maxEnemies = 50
+shootAnimDuration = 0.18
 
 darkBackdrop = (26, 26, 34)
 midGray = (44, 44, 58)
@@ -23,30 +25,99 @@ bigFont = pygame.font.Font(None, 70)
 smallFont = pygame.font.Font(None, 24)
 
 
+def loadAnimationFrames(subfolder, allow_placeholder=True):
+    folder_path = os.path.join("assets", subfolder)
+    frames = []
+    if os.path.isdir(folder_path):
+        for filename in sorted(os.listdir(folder_path)):
+            if not filename.lower().endswith(".png"):
+                continue
+            frame = pygame.image.load(os.path.join(folder_path, filename)).convert_alpha()
+            frames.append(frame)
+    if not frames and allow_placeholder:
+        # fallback circle sprite so the game can still run without assets
+        placeholder = pygame.Surface((48, 48), pygame.SRCALPHA)
+        pygame.draw.circle(placeholder, neonBlue, (24, 24), 22)
+        frames.append(placeholder)
+    return frames
+
+
 def createPlayer():
+    # Scale factor for the player
+    scale_factor = 3
+    
+    # Load animations first
+    idle_frames = loadAnimationFrames("idle")
+    run_frames = loadAnimationFrames("run")
+    reload_frames = loadAnimationFrames("reload")
+    dead_frames = loadAnimationFrames("dead")
+    shot_frames = loadAnimationFrames("shot", allow_placeholder=False)
+    if not shot_frames:
+        shot_frames = loadAnimationFrames("shoot", allow_placeholder=False)
+    if not shot_frames:
+        shot_frames = loadAnimationFrames("shot")
+    
+    # Scale each frame in the animations
+    def scale_frames(frames):
+        scaled = []
+        for frame in frames:
+            original_size = frame.get_size()
+            new_size = (int(original_size[0] * scale_factor), int(original_size[1] * scale_factor))
+            scaled_frame = pygame.transform.scale(frame, new_size)
+            scaled.append(scaled_frame)
+        return scaled
+    
+    # Calculate hitbox size (slightly smaller than the visual representation)
+    base_radius = 16  # Base radius for hitbox (before scaling)
+    
     return {
         "pos": pygame.Vector2(width / 2, height / 2),
-        "radius": 24,
+        "radius": base_radius * scale_factor,  # Scale the hitbox to match player size
         "speed": 360,
         "maxHealth": 130,
         "health": 130,
-        "cool": 0.0,
-        "heat": 0.0,
+        "cool": 0.0,  # Cooldown between shots
+        "heat": 0.0,  # Heat from sprinting
+        "reload": 0.0,  # Reload timer
+        "isReloading": False,  # Whether the player is currently reloading
+        "ammo": 10,  # Current ammo count
+        "maxAmmo": 10,  # Maximum ammo capacity
         "dash": 0.0,
         "damage": 1,
         "coolRate": 0.8,
         "fireDelay": 0.18,
+        "animations": {
+            "idle": scale_frames(idle_frames) if idle_frames[0].get_size() != (48 * scale_factor, 48 * scale_factor) else idle_frames,
+            "run": scale_frames(run_frames) if run_frames and run_frames[0].get_size() != (48 * scale_factor, 48 * scale_factor) else run_frames,
+            "reload": scale_frames(reload_frames) if reload_frames and reload_frames[0].get_size() != (48 * scale_factor, 48 * scale_factor) else reload_frames,
+            "death": scale_frames(dead_frames) if dead_frames and dead_frames[0].get_size() != (48 * scale_factor, 48 * scale_factor) else dead_frames,
+            "shoot": scale_frames(shot_frames) if shot_frames and shot_frames[0].get_size() != (48 * scale_factor, 48 * scale_factor) else shot_frames,
+        },
+        "animState": "idle",
+        "animFrame": 0,
+        "animTimer": 0.0,
+        "animSpeeds": {"idle": 0.22, "run": 0.08, "reload": 0.12, "shoot": 0.12, "death": 0.28},
+        "isMoving": False,
+        "facing": 1,
+        "shootTimer": 0.0,
+        "isDead": False,
+        "deathPlayed": False,
     }
 
 
 def createShot(player, target):
-    if player["cool"] > 0 or player["heat"] >= 3:
+    # Can't shoot while cooling down, reloading, or out of ammo
+    if player["cool"] > 0 or player["isReloading"] or player["ammo"] <= 0:
         return None
+        
     direction = target - player["pos"]
     if direction.length_squared() == 0:
         direction = pygame.Vector2(1, 0)
     direction = direction.normalize()
-    speed = 650 + player["heat"] * 40
+    
+    # Base speed with slight variation based on movement
+    speed = 650 + (player["heat"] * 30 if player["isMoving"] else 0)
+    
     shot = {
         "pos": player["pos"].copy(),
         "vel": direction * speed,
@@ -54,8 +125,16 @@ def createShot(player, target):
         "life": 1.3,
         "radius": 6,
     }
+    
     player["cool"] = player["fireDelay"]
-    player["heat"] += 0.32
+    player["ammo"] -= 1
+    player["shootTimer"] = shootAnimDuration
+    
+    # Start reloading if out of ammo
+    if player["ammo"] <= 0:
+        player["isReloading"] = True
+        player["reload"] = 1.5  # 1.5 second reload time
+    
     return shot
 
 
@@ -131,7 +210,7 @@ def buildGameState():
     return state
 
 
-# --------------------------- drawing helpers ------------------------------
+# drawing helpers
 
 def drawBackground(screen):
     screen.fill(darkBackdrop)
@@ -146,14 +225,22 @@ def drawBackground(screen):
 
 
 def drawPlayer(screen, player):
-    color = neonBlue if player["dash"] <= 0 else (180, 255, 255)
-    pygame.draw.circle(screen, color, (int(player["pos"].x), int(player["pos"].y)), player["radius"])
-    pygame.draw.circle(
-        screen,
-        neonPink,
-        (int(player["pos"].x), int(player["pos"].y - player["radius"] + 4)),
-        6,
-    )
+    frames = player["animations"].get(player["animState"], [])
+    if frames:
+        base_frame = frames[player["animFrame"] % len(frames)]
+        sprite = base_frame if player["facing"] >= 0 else pygame.transform.flip(base_frame, True, False)
+        rect = sprite.get_rect(center=(int(player["pos"].x), int(player["pos"].y)))
+        screen.blit(sprite, rect)
+    else:
+        pygame.draw.circle(screen, neonBlue, (int(player["pos"].x), int(player["pos"].y)), player["radius"])
+    if player["dash"] > 0:
+        pygame.draw.circle(
+            screen,
+            (180, 255, 255),
+            (int(player["pos"].x), int(player["pos"].y)),
+            player["radius"],
+            width=2,
+        )
 
 
 def drawEnemies(screen, enemies):
@@ -177,17 +264,51 @@ def drawCoins(screen, coins):
 
 def drawHud(screen, state):
     player = state["player"]
+    
+    # Health bar
     pygame.draw.rect(screen, (55, 35, 45), pygame.Rect(30, 30, 340, 26), border_radius=8)
-    ratio = player["health"] / player["maxHealth"]
-    pygame.draw.rect(screen, neonPink, pygame.Rect(30, 30, 340 * ratio, 26), border_radius=8)
+    health_ratio = player["health"] / player["maxHealth"]
+    pygame.draw.rect(screen, neonPink, pygame.Rect(30, 30, 340 * health_ratio, 26), border_radius=8)
     screen.blit(uiFont.render(f"HP {int(player['health'])}/{player['maxHealth']}", True, (255, 255, 255)), (40, 32))
+    
+    # Ammo counter
+    ammo_text = f"{player['ammo']}/{player['maxAmmo']}"
+    ammo_surface = uiFont.render(ammo_text, True, (255, 255, 255))
+    screen.blit(ammo_surface, (40, 65))
+    
+    # Reload indicator
+    if player["isReloading"]:
+        reload_progress = 1 - (player["reload"] / 1.5)  # 1.5 second reload time
+        reload_width = 100
+        pygame.draw.rect(screen, (50, 50, 60), pygame.Rect(120, 70, reload_width, 10), border_radius=5)
+        pygame.draw.rect(screen, neonBlue, pygame.Rect(120, 70, int(reload_width * reload_progress), 10), border_radius=5)
+    
+    # Heat meter
+    heat_width = 100
+    heat_ratio = player["heat"] / 3.0
+    pygame.draw.rect(screen, (50, 40, 45), pygame.Rect(40, 90, heat_width, 8), border_radius=4)
+    if heat_ratio > 0:
+        heat_color = (
+            min(255, 150 + int(heat_ratio * 105)),  # R: 150-255
+            max(0, 100 - int(heat_ratio * 100)),    # G: 100-0
+            40                                      # B: 40
+        )
+        pygame.draw.rect(screen, heat_color, pygame.Rect(40, 90, int(heat_width * heat_ratio), 8), border_radius=4)
+    
+    # Game info
     screen.blit(uiFont.render(f"score {state['score']}", True, (215, 255, 200)), (width - 230, 34))
     screen.blit(uiFont.render(f"coins {state['coinsBank']}", True, coinGold), (width - 230, 66))
     screen.blit(uiFont.render(f"wave {state['wave']}", True, (200, 220, 255)), (width - 230, 98))
-    screen.blit(smallFont.render(f"heat {player['heat']:.1f}/3", True, heatOrange), (40, 60))
+    
+    # Shop message
     if state["shopMessage"]:
         note = smallFont.render(state["shopMessage"], True, (255, 255, 255))
         screen.blit(note, (width // 2 - note.get_width() // 2, 20))
+    
+    # Overheat warning
+    if player["heat"] > 2.5:
+        warning = smallFont.render("OVERHEAT! SLOWED", True, heatOrange)
+        screen.blit(warning, (40, 110))
 
 
 def drawMenu(screen, dialog):
@@ -232,35 +353,66 @@ def drawShop(screen, state):
     screen.blit(skipText, (panel.x + 24, panel.y + panelHeight - 40))
 
 
-# --------------------------- gameplay logic -------------------------------
+# logic
 
 def movePlayer(player, dt, keys):
     direction = pygame.Vector2(0, 0)
-    if keys[pygame.K_w]:
+    
+    # Handle movement input
+    if keys[pygame.K_w] or keys[pygame.K_UP]:
         direction.y -= 1
-    if keys[pygame.K_s]:
+    if keys[pygame.K_s] or keys[pygame.K_DOWN]:
         direction.y += 1
-    if keys[pygame.K_a]:
+    if keys[pygame.K_a] or keys[pygame.K_LEFT]:
         direction.x -= 1
-    if keys[pygame.K_d]:
+    if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
         direction.x += 1
-    if keys[pygame.K_UP]:
-        direction.y -= 1
-    if keys[pygame.K_DOWN]:
-        direction.y += 1
-    if keys[pygame.K_LEFT]:
-        direction.x -= 1
-    if keys[pygame.K_RIGHT]:
-        direction.x += 1
+    
+    # Handle sprinting (left shift)
+    isSprinting = (keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT]) and direction.length_squared() > 0
+    
     if direction.length_squared() > 0:
         direction = direction.normalize()
-    dashSpeed = 1.65 if player["dash"] > 0 else 1
-    player["pos"] += direction * player["speed"] * dashSpeed * dt
+        player["isMoving"] = True
+        if abs(direction.x) > 0.05:
+            player["facing"] = 1 if direction.x > 0 else -1
+            
+        # Apply sprinting effects
+        if isSprinting:
+            player["heat"] = min(3.0, player["heat"] + dt * 2)  # Build up heat when sprinting
+        else:
+            player["heat"] = max(0, player["heat"] - dt * player["coolRate"])  # Cool down when not sprinting
+    else:
+        player["isMoving"] = False
+        player["heat"] = max(0, player["heat"] - dt * player["coolRate"])  # Cool down when not moving
+    
+    # Apply movement speed (reduced when overheated)
+    speed_multiplier = 1.0
+    if player["heat"] > 2.5:  # Overheat penalty
+        speed_multiplier = 0.6
+    elif isSprinting:
+        speed_multiplier = 1.5  # Sprint speed boost
+    
+    dash_speed = 1.65 if player["dash"] > 0 else 1.0
+    move_speed = player["speed"] * speed_multiplier * dash_speed * dt
+    
+    if direction.length_squared() > 0:
+        player["pos"] += direction * move_speed
+    
+    # Keep player in bounds
     player["pos"].x = max(player["radius"], min(width - player["radius"], player["pos"].x))
     player["pos"].y = max(player["radius"], min(cityFloor - player["radius"], player["pos"].y))
+    
+    # Update cooldowns
     player["cool"] = max(0, player["cool"] - dt)
-    player["heat"] = max(0, player["heat"] - dt * player["coolRate"])
     player["dash"] = max(0, player["dash"] - dt)
+    
+    # Handle reloading
+    if player["isReloading"]:
+        player["reload"] -= dt
+        if player["reload"] <= 0:
+            player["isReloading"] = False
+            player["ammo"] = player["maxAmmo"]
 
 
 def dashPlayer(player):
@@ -291,6 +443,55 @@ def updateCoin(coin, dt):
         coin["pos"].y = cityFloor - coin["radius"]
         coin["vel"].y *= -0.25
         coin["vel"].x *= 0.75
+
+
+def updatePlayerAnimation(player, dt):
+    # Update the shooting timer if active
+    if player["shootTimer"] > 0:
+        player["shootTimer"] = max(0, player["shootTimer"] - dt)
+
+    # Determine the desired animation state
+    if player["isDead"] and player["animations"].get("death"):
+        player["shootTimer"] = 0
+        desired_state = "death"
+    elif player["isReloading"]:
+        player["shootTimer"] = 0
+        desired_state = "reload"
+    elif player["shootTimer"] > 0 and player["animations"].get("shoot"):
+        desired_state = "shoot"
+    elif player["isMoving"]:
+        desired_state = "run"
+    else:
+        desired_state = "idle"
+        
+    # Fallback to idle if the desired state doesn't exist
+    if desired_state not in player["animations"] or not player["animations"][desired_state]:
+        desired_state = "idle"
+    if player["animState"] != desired_state:
+        player["animState"] = desired_state
+        player["animFrame"] = 0
+        player["animTimer"] = 0.0
+        if desired_state == "death":
+            player["deathPlayed"] = False
+    frames = player["animations"].get(player["animState"], [])
+    if not frames:
+        return
+    frame_duration = player["animSpeeds"].get(player["animState"], 0.12)
+    player["animTimer"] += dt
+    if player["animState"] == "death":
+        if player["deathPlayed"]:
+            player["animFrame"] = len(frames) - 1
+            return
+        # advance towards last frame without looping
+        while player["animTimer"] >= frame_duration and player["animFrame"] < len(frames) - 1:
+            player["animTimer"] -= frame_duration
+            player["animFrame"] += 1
+        if player["animFrame"] >= len(frames) - 1:
+            player["deathPlayed"] = True
+        return
+    while player["animTimer"] >= frame_duration:
+        player["animTimer"] -= frame_duration
+        player["animFrame"] = (player["animFrame"] + 1) % len(frames)
 
 
 def spawnEnemy(state):
@@ -354,30 +555,51 @@ def handleCollisions(state, dt):
             player["health"] -= 35 * dt
             player["heat"] += 0.1 * dt * fps
     if player["health"] <= 0 and not state["gameOver"]:
+        player["isDead"] = True
+        player["shootTimer"] = 0
         state["gameOver"] = True
         state["shopActive"] = False
 
 
 def updateGame(state, dt):
     keys = pygame.key.get_pressed()
-    movePlayer(state["player"], dt, keys)
-    if keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT]:
-        dashPlayer(state["player"])
+    player = state["player"]
+    
+    # Handle movement
+    movePlayer(player, dt, keys)
+    
+    # Handle shooting
     mousePos = pygame.Vector2(pygame.mouse.get_pos())
-    if pygame.mouse.get_pressed()[0] or keys[pygame.K_SPACE]:
-        shot = createShot(state["player"], mousePos)
+    if (pygame.mouse.get_pressed()[0] or keys[pygame.K_SPACE]) and not player["isReloading"]:
+        shot = createShot(player, mousePos)
         if shot:
             state["shots"].append(shot)
-    state["shots"] = [shot for shot in state["shots"] if updateShot(shot, dt)]
+    
+    # Reload with R key
+    if keys[pygame.K_r] and not player["isReloading"] and player["ammo"] < player["maxAmmo"]:
+        player["isReloading"] = True
+        player["reload"] = 1.5  # 1.5 second reload time
+    
+    # Update game objects
+    state["shots"] = [s for s in state["shots"] if updateShot(s, dt)]
     for enemy in state["enemies"]:
-        updateEnemy(enemy, dt, state["player"]["pos"])
-    handleCollisions(state, dt)
+        updateEnemy(enemy, dt, player["pos"])
     updateCoins(state, dt)
     updateWaves(state, dt)
-    updateShopNote(state, dt)
+    handleCollisions(state, dt)
+    
+    # Handle shop interactions
+    if state["shopActive"]:
+        updateShopNote(state, dt)
+        if keys[pygame.K_1]:
+            buyOption(state, 0)
+        elif keys[pygame.K_2]:
+            buyOption(state, 1)
+        elif keys[pygame.K_3]:
+            buyOption(state, 2)
+        elif keys[pygame.K_4]:
+            closeShop(state)
 
-
-# --------------------------- shop & upgrades ------------------------------
 
 def openShop(state):
     state["shopActive"] = True
@@ -429,7 +651,7 @@ def applyUpgrade(state, effect):
         state["coinBonus"] += 1
 
 
-# --------------------------- main loop ------------------------------------
+# main
 
 def runGame():
     state = buildGameState()
@@ -461,6 +683,7 @@ def runGame():
                         closeShop(state)
         if not state["menu"] and not state["gameOver"] and not state["shopActive"]:
             updateGame(state, dt)
+        updatePlayerAnimation(state["player"], dt)
         drawBackground(state["screen"])
         drawCoins(state["screen"], state["coins"])
         drawEnemies(state["screen"], state["enemies"])
