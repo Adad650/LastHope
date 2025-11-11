@@ -188,7 +188,7 @@
       player.ammo--;
       player.shootTimer = SHOOT_ANIM_DURATION;
       
-      // Start reloading if out of ammo
+      // Auto realding stuff
       if (player.ammo <= 0) {
         player.isReloading = true;
         player.reloadTimer = player.reloadTime;
@@ -309,7 +309,7 @@
     }
 
     function updatePlayerAnimation(player, dt) {
-      // Update reload timer and handle auto-reload completion
+      // reaload timer
       if (player.isReloading) {
         player.reloadTimer -= dt;
         if (player.reloadTimer <= 0) {
@@ -320,7 +320,7 @@
       
       player.shootTimer = Math.max(0, player.shootTimer - dt);
       
-      // Determine animation state
+      // animation state
       let desiredState = 'idle';
       if (player.isDead && animationFrames.death.length) {
         desiredState = 'death';
@@ -545,7 +545,7 @@
     function updateGame(state, dt) {
       const player = state.player;
       
-      // Handle player input and movement
+      // Handle player input and moveing
       movePlayer(player, dt);
       
       // Handle dashing
@@ -835,6 +835,9 @@
       last = now;
       if (!state.menu && !state.gameOver && !state.shopActive) {
         updateGame(state, dt);
+      }
+      if (!state.menu) {
+        updatePlayerAnimation(state.player, dt);
       }
       draw();
       requestAnimationFrame(loop);
