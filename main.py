@@ -683,6 +683,27 @@ def drawHud(screen, state):
             desc = smallFont.render(weather.get("desc", ""), True, (170, 200, 255))
             screen.blit(desc, (width - desc.get_width() - 30, 154))
 
+    combo = state.get("combo")
+    if combo:
+        panel = pygame.Rect(width - 280, height - 150, 230, 90)
+        pygame.draw.rect(screen, (24, 18, 28), panel, border_radius=10)
+        pygame.draw.rect(screen, (255, 180, 60), panel, width=2, border_radius=10)
+        combo_text = smallFont.render(f"combo ×{combo['value']}", True, (255, 220, 160))
+        screen.blit(combo_text, (panel.x + 16, panel.y + 12))
+        best_text = smallFont.render(f"best ×{combo['best']}", True, (220, 200, 180))
+        screen.blit(best_text, (panel.x + 16, panel.y + 34))
+        timer_ratio = max(0.0, min(1.0, combo.get("timer", 0.0) / combo.get("decay", 1.0)))
+        bar = pygame.Rect(panel.x + 16, panel.y + 60, panel.width - 32, 12)
+        pygame.draw.rect(screen, (40, 25, 35), bar, border_radius=6)
+        if combo["value"] > 1 and timer_ratio > 0:
+            fill = bar.copy()
+            fill.width = int(bar.width * timer_ratio)
+            pygame.draw.rect(screen, (255, 140, 105), fill, border_radius=6)
+        if combo.get("flash", 0) > 0:
+            glow = pygame.Surface((panel.width, panel.height), pygame.SRCALPHA)
+            glow.fill((255, 200, 150, int(90 * combo["flash"])) )
+            screen.blit(glow, panel.topleft)
+
     drawContracts(screen, state)
 
     timelineHint = "TAB → hide log" if state.get("timelineVisible") else "TAB → open log"
@@ -712,6 +733,7 @@ def drawGameOver(screen, state):
         f"wave cleared {state.get('wave', 1) - 1}",
         f"damage dealt {int(telemetry.get('damageDealt', 0))}",
         f"damage taken {int(telemetry.get('damageTaken', 0))}",
+        f"combo best ×{state.get('combo', {}).get('best', 1)}",
         f"accuracy {accuracy:04.1f}%",
     ]
     for idx, text in enumerate(summary):
@@ -1056,7 +1078,7 @@ def handleCollisions(state, dt):
                 telemetry["damageDealt"] = telemetry.get("damageDealt", 0.0) + shot["damage"]
         if enemy["hp"] <= 0:
             state["enemies"].remove(enemy)
-            state["score"] += 30
+            comboKillReward(state, 30)
             dropCoins(state, enemy["pos"])
             chargePulse(state, 6)
             continue
@@ -1065,6 +1087,7 @@ def handleCollisions(state, dt):
             player["health"] -= damage
             telemetry["damageTaken"] = telemetry.get("damageTaken", 0.0) + damage
             player["heat"] += 0.1 * dt * fps
+            resetCombo(state)
     if player["health"] <= 0 and not state["gameOver"]:
         player["isDead"] = True
         player["shootTimer"] = 0
@@ -1083,6 +1106,7 @@ def updateGame(state, dt):
         telemetry["nextTimeMilestone"] = telemetry.get("nextTimeMilestone", 0) + 60
 
     updatePulse(state, dt)
+    updateCombo(state, dt)
 
     # Handle movement
     previousPos = player["pos"].copy()
@@ -1107,6 +1131,7 @@ def updateGame(state, dt):
     for enemy in state["enemies"]:
         updateEnemy(enemy, dt, player["pos"])
     updateCoins(state, dt)
+    updateIntelCaches(state, dt)
     updateWaves(state, dt)
     handleCollisions(state, dt)
     updateContracts(state)
@@ -1218,6 +1243,7 @@ def runGame():
         updatePlayerAnimation(state["player"], dt)
         drawBackground(state["screen"], state.get("background"), state.get("weather"))
         drawCoins(state["screen"], state["coins"])
+        drawIntelCaches(state["screen"], state.get("intelCaches", []))
         drawEnemies(state["screen"], state["enemies"])
         drawShots(state["screen"], state["shots"])
         drawPlayer(state["screen"], state["player"])

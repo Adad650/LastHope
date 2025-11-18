@@ -254,6 +254,74 @@
         chargePulse(state, dt * 10);
       }
     }
+
+    function createComboState() {
+      return { value: 1, timer: 0, decay: 6, best: 1, flash: 0 };
+    }
+
+    function registerComboKill(state) {
+      const combo = state.combo;
+      combo.value = Math.min(6, combo.value + 1);
+      combo.timer = combo.decay;
+      combo.flash = 0.35;
+      if (combo.value > combo.best) {
+        combo.best = combo.value;
+        logEvent(state, `new combo record ×${combo.value}`);
+      }
+    }
+
+    function resetCombo(state) {
+      const combo = state.combo;
+      if (!combo || combo.value <= 1) return;
+      combo.value = 1;
+      combo.timer = 0;
+      combo.flash = 0;
+      logEvent(state, 'combo lost');
+    }
+
+    function updateCombo(state, dt) {
+      const combo = state.combo;
+      if (!combo) return;
+      if (combo.flash > 0) {
+        combo.flash = Math.max(0, combo.flash - dt * 2.5);
+      }
+      if (combo.value <= 1) {
+        combo.timer = 0;
+        return;
+      }
+      combo.timer -= dt;
+      if (combo.timer <= 0) {
+        combo.value -= 1;
+        combo.timer = combo.decay;
+        if (combo.value === 1) {
+          logEvent(state, 'combo cooled down');
+        }
+      }
+    }
+
+    function awardScore(state, base, comboKill = false) {
+      const combo = comboKill ? state.combo : null;
+      const multiplier = combo ? combo.value : 1;
+      const reward = Math.floor(base * multiplier);
+      state.score += reward;
+      return reward;
+    }
+
+    function comboKillReward(state, base) {
+      registerComboKill(state);
+      return awardScore(state, base, true);
+    }
+
+    function grantCoins(state, amount) {
+      if (amount <= 0) return;
+      state.coinsBank += amount;
+      state.telemetry.coinsCollected += amount;
+      if (state.telemetry.coinsCollected >= state.telemetry.nextCoinMilestone) {
+        logEvent(state, `funding milestone: ${state.telemetry.nextCoinMilestone} credits secured`);
+        state.telemetry.nextCoinMilestone += 50;
+      }
+      chargePulse(state, amount * 2);
+    }
     function createTelemetry() {
       return {
         timeAlive: 0,
@@ -392,6 +460,19 @@
       };
     }
 
+    function createIntelCache() {
+      return {
+        pos: { x: randRange(80, WIDTH - 80), y: randRange(120, FLOOR - 160) },
+        radius: 18,
+        life: randRange(18, 30),
+        phase: Math.random() * Math.PI * 2,
+        bob: 0,
+        pulse: randRange(12, 20),
+        coins: randInt(8, 16),
+        heal: randInt(8, 18)
+      };
+    }
+
     function makeState() {
       return {
         player: makePlayer(),
@@ -416,7 +497,10 @@
         timelineVisible: false,
         contracts: createContracts(),
         pulse: createPulseState(),
-        weather: createWeatherState()
+        weather: createWeatherState(),
+        combo: createComboState(),
+        intelCaches: [],
+        intelTimer: randRange(18, 26)
       };
     }
 
@@ -424,6 +508,7 @@
     logEvent(state, 'simulation booted in neon dusk');
     logEvent(state, 'TAB toggles the resistance log');
     logEvent(state, 'pulse refuels via movement + loot');
+    logEvent(state, 'combo kills boost score');
 
     function randRange(min, max) {
       return Math.random() * (max - min) + min;
@@ -565,18 +650,47 @@
         const dist = Math.hypot(coin.pos.x - player.pos.x, coin.pos.y - player.pos.y);
         if (dist < coin.radius + player.radius) {
           const value = coin.value * state.coinBonus;
-          state.coinsBank += value;
-          state.telemetry.coinsCollected += value;
-          if (state.telemetry.coinsCollected >= state.telemetry.nextCoinMilestone) {
-            logEvent(state, `funding milestone: ${state.telemetry.nextCoinMilestone} credits secured`);
-            state.telemetry.nextCoinMilestone += 50;
-          }
-          chargePulse(state, value * 2);
+          grantCoins(state, value);
           state.coins.splice(i, 1);
           continue;
         }
         if (coin.pos.y >= FLOOR - coin.radius && Math.abs(coin.vel.y) < 5) {
           coin.vel.y = 0;
+        }
+      }
+    }
+
+    function collectIntelCache(state, cache) {
+      grantCoins(state, cache.coins || 0);
+      const player = state.player;
+      player.health = Math.min(player.maxHealth, player.health + (cache.heal || 0));
+      player.ammo = Math.min(player.maxAmmo, player.ammo + 2);
+      chargePulse(state, cache.pulse || 0);
+      logEvent(state, 'intel cache cracked — supplies restocked');
+    }
+
+    function updateIntelCaches(state, dt) {
+      state.intelTimer -= dt;
+      if (state.intelTimer <= 0) {
+        state.intelCaches.push(createIntelCache());
+        state.intelTimer = randRange(18, 30);
+        logEvent(state, 'intel cache pinged nearby');
+      }
+      const player = state.player;
+      for (let i = state.intelCaches.length - 1; i >= 0; i--) {
+        const cache = state.intelCaches[i];
+        cache.life -= dt;
+        cache.phase += dt * 2.5;
+        cache.bob = Math.sin(cache.phase) * 8;
+        if (cache.life <= 0) {
+          state.intelCaches.splice(i, 1);
+          continue;
+        }
+        const currentY = cache.pos.y + cache.bob;
+        const dist = Math.hypot(cache.pos.x - player.pos.x, currentY - player.pos.y);
+        if (dist < cache.radius + player.radius) {
+          state.intelCaches.splice(i, 1);
+          collectIntelCache(state, cache);
         }
       }
     }
@@ -615,7 +729,7 @@
         }
         if (enemy.hp <= 0) {
           state.enemies.splice(i, 1);
-          state.score += 30;
+          comboKillReward(state, 30);
           dropCoins(state, enemy.pos);
           chargePulse(state, 6);
           continue;
@@ -626,6 +740,7 @@
           player.health -= damage;
           telemetry.damageTaken += damage;
           player.heat = Math.min(4, player.heat + 0.1 * dt * FPS);
+          resetCombo(state);
         }
       }
       if (player.health <= 0 && !state.gameOver) {
@@ -803,6 +918,7 @@
       updateEnemies(state, dt);
       handleCollisions(state, dt);
       updateCoins(state, dt);
+      updateIntelCaches(state, dt);
       updateWaves(state, dt);
       tickNote(state, dt);
       updateContracts(state);
@@ -904,6 +1020,24 @@
         ctx.beginPath();
         ctx.fillStyle = '#fff';
         ctx.arc(coin.pos.x, coin.pos.y, 4, 0, Math.PI * 2);
+        ctx.fill();
+      });
+    }
+
+    function drawIntelCaches() {
+      state.intelCaches.forEach((cache) => {
+        const x = cache.pos.x;
+        const y = cache.pos.y + (cache.bob || 0);
+        const gradient = ctx.createRadialGradient(x, y, 0, x, y, cache.radius + 12);
+        gradient.addColorStop(0, 'rgba(120,255,255,0.9)');
+        gradient.addColorStop(1, 'rgba(80,150,255,0)');
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.arc(x, y, cache.radius + 12, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(x, y, 6, 0, Math.PI * 2);
         ctx.fill();
       });
     }
@@ -1035,6 +1169,35 @@
         }
         ctx.textAlign = 'left';
       }
+      const combo = state.combo;
+      if (combo) {
+        const x = WIDTH - 250;
+        const y = HEIGHT - 140;
+        const w = 220;
+        const h = 80;
+        ctx.fillStyle = 'rgba(30,20,34,0.95)';
+        ctx.fillRect(x, y, w, h);
+        ctx.strokeStyle = 'rgba(255,170,90,0.9)';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x, y, w, h);
+        ctx.fillStyle = '#ffd9a5';
+        ctx.font = '16px "Trebuchet MS", sans-serif';
+        ctx.fillText(`combo ×${combo.value}`, x + 14, y + 22);
+        ctx.fillStyle = '#e0c4b0';
+        ctx.font = '14px "Trebuchet MS", sans-serif';
+        ctx.fillText(`best ×${combo.best}`, x + 14, y + 42);
+        const ratio = combo.value > 1 ? Math.max(0, Math.min(1, combo.timer / combo.decay)) : 0;
+        ctx.fillStyle = '#2a1822';
+        ctx.fillRect(x + 14, y + 50, w - 28, 10);
+        if (ratio > 0) {
+          ctx.fillStyle = '#ff986e';
+          ctx.fillRect(x + 14, y + 50, (w - 28) * ratio, 10);
+        }
+        if (combo.flash > 0) {
+          ctx.fillStyle = `rgba(255,200,150,${combo.flash * 0.6})`;
+          ctx.fillRect(x, y, w, h);
+        }
+      }
       ctx.textAlign = 'left';
     }
 
@@ -1071,6 +1234,7 @@
         `wave cleared ${state.wave - 1}`,
         `damage dealt ${Math.floor(telemetry.damageDealt)}`,
         `damage taken ${Math.floor(telemetry.damageTaken)}`,
+        `combo best ×${state.combo.best}`,
         `accuracy ${accuracy.toFixed(1)}%`
       ];
       ctx.font = '20px "Trebuchet MS", sans-serif';
@@ -1170,6 +1334,7 @@
     function draw() {
       drawBackground();
       drawCoins();
+      drawIntelCaches();
       drawEnemies();
       drawShots();
       drawPlayer();
