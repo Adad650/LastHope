@@ -1,3 +1,4 @@
+import math
 import os
 import random
 import sys
@@ -23,6 +24,286 @@ pygame.font.init()
 uiFont = pygame.font.Font(None, 34)
 bigFont = pygame.font.Font(None, 70)
 smallFont = pygame.font.Font(None, 24)
+
+
+WEATHER_PATTERNS = {
+    "clear": {
+        "spawnFactor": 1.0,
+        "enemySpeed": 1.0,
+        "tint": (0, 0, 0, 0),
+        "desc": "city calm"
+    },
+    "ion rain": {
+        "spawnFactor": 1.2,
+        "enemySpeed": 0.95,
+        "tint": (25, 60, 110, 70),
+        "desc": "extra drops, murky vision"
+    },
+    "ember storm": {
+        "spawnFactor": 0.9,
+        "enemySpeed": 1.2,
+        "tint": (120, 45, 10, 80),
+        "desc": "hot winds boost hostiles"
+    },
+    "glitch fog": {
+        "spawnFactor": 1.05,
+        "enemySpeed": 0.9,
+        "tint": (70, 0, 90, 80),
+        "desc": "scrambles enemy sensors"
+    },
+    "aurora surge": {
+        "spawnFactor": 1.1,
+        "enemySpeed": 1.05,
+        "tint": (20, 90, 80, 60),
+        "desc": "energized skies"
+    },
+}
+
+
+def createPulseState():
+    return {
+        "charge": 0.0,
+        "max": 100.0,
+        "cooldown": 0.0,
+        "ready": False,
+        "flash": 0.0,
+    }
+
+
+def createWeatherState():
+    preset = WEATHER_PATTERNS["clear"].copy()
+    preset.setdefault("desc", "")
+    return {
+        "name": "clear",
+        "timer": random.uniform(18, 28),
+        "messageTimer": 0.0,
+        **preset,
+    }
+
+
+def pickWeatherName(current):
+    options = [name for name in WEATHER_PATTERNS.keys() if name != current]
+    return random.choice(options) if options else current
+
+
+def applyWeather(state, name):
+    pattern = WEATHER_PATTERNS.get(name, WEATHER_PATTERNS["clear"]).copy()
+    weather = state.get("weather")
+    if not weather:
+        return
+    weather.update(pattern)
+    weather["name"] = name
+    weather["timer"] = random.uniform(16, 30)
+    weather["messageTimer"] = 4.0
+    logEvent(state, f"weather shift: {name} — {pattern.get('desc', '')}")
+
+
+def updateWeather(state, dt):
+    weather = state.get("weather")
+    if not weather:
+        return
+    weather["timer"] -= dt
+    weather["messageTimer"] = max(0.0, weather.get("messageTimer", 0.0) - dt)
+    if weather["timer"] <= 0:
+        applyWeather(state, pickWeatherName(weather["name"]))
+
+
+def chargePulse(state, amount):
+    pulse = state.get("pulse")
+    if not pulse or pulse["ready"] or pulse["cooldown"] > 0:
+        return
+    pulse["charge"] = min(pulse["max"], pulse["charge"] + amount)
+    if pulse["charge"] >= pulse["max"]:
+        pulse["ready"] = True
+        logEvent(state, "pulse charged — press E")
+
+
+def activatePulse(state):
+    if state.get("menu") or state.get("gameOver") or state.get("shopActive"):
+        return
+    pulse = state.get("pulse")
+    player = state.get("player")
+    if not pulse or not player or not pulse.get("ready"):
+        return
+    radius = 260
+    pulseDamage = player["damage"] * 4 + 8
+    for enemy in list(state.get("enemies", [])):
+        if enemy["pos"].distance_to(player["pos"]) <= radius:
+            enemy["hp"] -= pulseDamage
+            enemy["speed"] *= 0.85
+            enemy["mood"] += 40
+    pulse["ready"] = False
+    pulse["charge"] = 0.0
+    pulse["cooldown"] = 6.0
+    pulse["flash"] = 0.4
+    logEvent(state, "resonance pulse unleashed")
+
+
+def updatePulse(state, dt):
+    pulse = state.get("pulse")
+    if not pulse:
+        return
+    if pulse["flash"] > 0:
+        pulse["flash"] = max(0.0, pulse["flash"] - dt)
+    if pulse["cooldown"] > 0:
+        pulse["cooldown"] = max(0.0, pulse["cooldown"] - dt)
+    if not pulse["ready"] and pulse["cooldown"] == 0:
+        chargePulse(state, dt * 10)
+
+
+def drawWeatherOverlay(screen, weather):
+    if not weather:
+        return
+    tint = weather.get("tint", (0, 0, 0, 0))
+    if len(tint) < 4 or tint[3] <= 0:
+        return
+    overlay = pygame.Surface((width, height), pygame.SRCALPHA)
+    overlay.fill(tint)
+    screen.blit(overlay, (0, 0))
+
+
+def drawPulseFlash(screen, state):
+    pulse = state.get("pulse")
+    player = state.get("player")
+    if not pulse or not player or pulse["flash"] <= 0:
+        return
+    overlay = pygame.Surface((width, height), pygame.SRCALPHA)
+    alpha = int(150 * pulse["flash"])
+    radius = int(240 + 100 * (1 - pulse["flash"]))
+    pygame.draw.circle(
+        overlay,
+        (120, 255, 255, alpha),
+        (int(player["pos"].x), int(player["pos"].y)),
+        radius,
+        width=6,
+    )
+    screen.blit(overlay, (0, 0))
+
+
+def createComboState():
+    return {
+        "value": 1,
+        "timer": 0.0,
+        "decay": 6.0,
+        "best": 1,
+        "flash": 0.0,
+    }
+
+
+def registerComboKill(state):
+    combo = state.get("combo")
+    if not combo:
+        return 1
+    combo["value"] = min(6, combo["value"] + 1)
+    combo["timer"] = combo["decay"]
+    combo["flash"] = 0.35
+    if combo["value"] > combo["best"]:
+        combo["best"] = combo["value"]
+        logEvent(state, f"new combo record ×{combo['value']}")
+    return combo["value"]
+
+
+def resetCombo(state):
+    combo = state.get("combo")
+    if not combo or combo["value"] <= 1:
+        return
+    combo["value"] = 1
+    combo["timer"] = 0.0
+    combo["flash"] = 0.0
+    logEvent(state, "combo lost")
+
+
+def updateCombo(state, dt):
+    combo = state.get("combo")
+    if not combo:
+        return
+    if combo["flash"] > 0:
+        combo["flash"] = max(0.0, combo["flash"] - dt * 2.5)
+    if combo["value"] <= 1:
+        combo["timer"] = 0.0
+        return
+    combo["timer"] -= dt
+    if combo["timer"] <= 0:
+        combo["value"] -= 1
+        combo["timer"] = combo["decay"]
+        if combo["value"] == 1:
+            logEvent(state, "combo cooled down")
+
+
+def awardScore(state, base, comboKill=False):
+    combo = state.get("combo") if comboKill else None
+    multiplier = combo.get("value", 1) if combo else 1
+    reward = int(base * multiplier)
+    state["score"] += reward
+    return reward
+
+
+def comboKillReward(state, base):
+    registerComboKill(state)
+    return awardScore(state, base, comboKill=True)
+
+
+def grantCoins(state, amount):
+    if amount <= 0:
+        return
+    state["coinsBank"] += amount
+    telemetry = state.get("telemetry", {})
+    telemetry["coinsCollected"] = telemetry.get("coinsCollected", 0) + amount
+    milestone = telemetry.get("nextCoinMilestone")
+    if milestone and telemetry["coinsCollected"] >= milestone:
+        logEvent(state, f"funding milestone: {milestone} credits secured")
+        telemetry["nextCoinMilestone"] = milestone + 50
+    chargePulse(state, amount * 2)
+
+
+def formatClock(seconds: float) -> str:
+    minutes = int(seconds // 60)
+    secs = int(seconds % 60)
+    return f"{minutes:02d}:{secs:02d}"
+
+
+def createTelemetry():
+    return {
+        "timeAlive": 0.0,
+        "shotsFired": 0,
+        "shotsHit": 0,
+        "damageTaken": 0.0,
+        "damageDealt": 0.0,
+        "distanceTraveled": 0.0,
+        "coinsCollected": 0,
+        "wavesCleared": 0,
+        "nextCoinMilestone": 50,
+        "nextTimeMilestone": 60,
+    }
+
+
+def createContracts():
+    return [
+        {"name": "fund the safehouse", "type": "coins", "target": 120, "reward": 12, "progress": 0.0, "completed": False},
+        {"name": "hold the plaza", "type": "time", "target": 90, "reward": 10, "progress": 0.0, "completed": False},
+        {"name": "precision training", "type": "hits", "target": 35, "reward": 14, "progress": 0.0, "completed": False},
+        {"name": "sweep the district", "type": "distance", "target": 2500, "reward": 10, "progress": 0.0, "completed": False},
+    ]
+
+
+def logEvent(state, text):
+    if "timeline" not in state:
+        state["timeline"] = []
+    telemetry = state.get("telemetry", {})
+    entry = {"time": telemetry.get("timeAlive", 0.0), "text": text}
+    state["timeline"].append(entry)
+    if len(state["timeline"]) > 20:
+        state["timeline"] = state["timeline"][-20:]
+
+def loadBackgroundImage():
+    path = os.path.join("assets", "background", "background.png")
+    if not os.path.isfile(path):
+        return None
+    try:
+        image = pygame.image.load(path).convert()
+        return pygame.transform.scale(image, (width, height))
+    except pygame.error:
+        return None
 
 
 def loadAnimationFrames(subfolder, allow_placeholder=True):
@@ -170,11 +451,26 @@ def createCoin(position):
     }
 
 
+def createIntelCache():
+    return {
+        "pos": pygame.Vector2(random.randint(80, width - 80), random.randint(120, cityFloor - 160)),
+        "radius": 18,
+        "life": random.uniform(18, 30),
+        "phase": random.uniform(0, math.tau),
+        "pulse": random.randint(12, 20),
+        "coins": random.randint(8, 16),
+        "heal": random.randint(8, 18),
+        "bob": 0.0,
+    }
+
+
 def buildGameState():
     screen = pygame.display.set_mode((width, height))
+    background = loadBackgroundImage()
     pygame.display.set_caption("Last Hope")
     state = {
         "screen": screen,
+        "background": background,
         "clock": pygame.time.Clock(),
         "player": createPlayer(),
         "shots": [],
@@ -206,22 +502,39 @@ def buildGameState():
             {"name": "trigger tweak", "desc": "faster fire rate", "cost": 7, "effect": "fireRate"},
             {"name": "coin printer", "desc": "coins drop x2 value", "cost": 10, "effect": "coinBonus"},
         ],
+        "telemetry": createTelemetry(),
+        "timeline": [],
+        "timelineVisible": False,
+        "contracts": createContracts(),
+        "pulse": createPulseState(),
+        "weather": createWeatherState(),
+        "combo": createComboState(),
+        "intelCaches": [],
+        "intelTimer": random.uniform(18, 26),
     }
+    logEvent(state, "simulation booted in neon dusk")
+    logEvent(state, "tab toggles the resistance log")
+    logEvent(state, "pulse recharges as you move & loot")
+    logEvent(state, "combo kills boost score")
     return state
 
 
 # drawing helpers
 
-def drawBackground(screen):
-    screen.fill(darkBackdrop)
-    pygame.draw.rect(screen, midGray, pygame.Rect(0, cityFloor, width, height - cityFloor))
-    for i in range(7):
-        buildingWidth = 90
-        gap = 110
-        baseX = (i * gap + (i % 2) * 30) % width
-        buildingHeight = 120 + (i * 27 % 180)
-        pygame.draw.rect(screen, lightGray, pygame.Rect(baseX, cityFloor - buildingHeight, 70, buildingHeight))
-        pygame.draw.rect(screen, (90, 90, 120), pygame.Rect(baseX + 15, cityFloor - buildingHeight - 16, 40, 18))
+def drawBackground(screen, background, weather=None):
+    if background:
+        screen.blit(background, (0, 0))
+    else:
+        screen.fill(darkBackdrop)
+        pygame.draw.rect(screen, midGray, pygame.Rect(0, cityFloor, width, height - cityFloor))
+        for i in range(7):
+            buildingWidth = 90
+            gap = 110
+            baseX = (i * gap + (i % 2) * 30) % width
+            buildingHeight = 120 + (i * 27 % 180)
+            pygame.draw.rect(screen, lightGray, pygame.Rect(baseX, cityFloor - buildingHeight, 70, buildingHeight))
+            pygame.draw.rect(screen, (90, 90, 120), pygame.Rect(baseX + 15, cityFloor - buildingHeight - 16, 40, 18))
+    drawWeatherOverlay(screen, weather)
 
 
 def drawPlayer(screen, player):
@@ -260,6 +573,18 @@ def drawCoins(screen, coins):
     for coin in coins:
         pygame.draw.circle(screen, coinGold, (int(coin["pos"].x), int(coin["pos"].y)), coin["radius"])
         pygame.draw.circle(screen, (255, 255, 255), (int(coin["pos"].x), int(coin["pos"].y)), 4)
+
+
+def drawIntelCaches(screen, caches):
+    for cache in caches:
+        x = int(cache["pos"].x)
+        y = int(cache["pos"].y + cache.get("bob", 0.0))
+        outer_radius = cache["radius"] + 8
+        glow_surface = pygame.Surface((outer_radius * 2, outer_radius * 2), pygame.SRCALPHA)
+        pygame.draw.circle(glow_surface, (80, 200, 255, 90), (outer_radius, outer_radius), outer_radius)
+        pygame.draw.circle(glow_surface, (120, 255, 255, 160), (outer_radius, outer_radius), cache["radius"])
+        screen.blit(glow_surface, (x - outer_radius, y - outer_radius))
+        pygame.draw.circle(screen, (255, 255, 255), (x, y), 6)
 
 
 def drawHud(screen, state):
@@ -304,11 +629,65 @@ def drawHud(screen, state):
     if state["shopMessage"]:
         note = smallFont.render(state["shopMessage"], True, (255, 255, 255))
         screen.blit(note, (width // 2 - note.get_width() // 2, 20))
-    
+
     # Overheat warning
     if player["heat"] > 2.5:
         warning = smallFont.render("OVERHEAT! SLOWED", True, heatOrange)
         screen.blit(warning, (40, 110))
+
+    telemetry = state.get("telemetry", {})
+    accuracy = 0.0
+    if telemetry.get("shotsFired"):
+        accuracy = (telemetry.get("shotsHit", 0) / telemetry["shotsFired"]) * 100
+    statsPanel = pygame.Rect(30, height - 150, 320, 110)
+    pygame.draw.rect(screen, (25, 20, 28), statsPanel, border_radius=10)
+    pygame.draw.rect(screen, neonBlue, statsPanel, width=2, border_radius=10)
+    statLines = [
+        f"time {formatClock(telemetry.get('timeAlive', 0.0))}",
+        f"accuracy {accuracy:04.1f}%",
+        f"distance {int(telemetry.get('distanceTraveled', 0))}m",
+        f"coins {telemetry.get('coinsCollected', 0)} | hits {telemetry.get('shotsHit', 0)}",
+    ]
+    for idx, text in enumerate(statLines):
+        label = smallFont.render(text, True, (230, 230, 230))
+        screen.blit(label, (statsPanel.x + 16, statsPanel.y + 12 + idx * 24))
+
+    pulse = state.get("pulse")
+    if pulse:
+        pulseRect = pygame.Rect(width // 2 - 130, height - 70, 260, 22)
+        pygame.draw.rect(screen, (20, 25, 36), pulseRect, border_radius=12)
+        pygame.draw.rect(screen, (30, 60, 90), pulseRect, width=2, border_radius=12)
+        ratio = pulse["charge"] / pulse["max"] if pulse["max"] else 0
+        inner = pulseRect.inflate(-6, -6)
+        if ratio > 0:
+            fill = inner.copy()
+            fill.width = int(inner.width * min(1.0, ratio))
+            pygame.draw.rect(
+                screen,
+                (110, 220, 255) if not pulse["ready"] else (150, 255, 190),
+                fill,
+                border_radius=10,
+            )
+        text = "PULSE READY [E]" if pulse["ready"] else "charging resonance"
+        text_surface = smallFont.render(text, True, (220, 235, 255))
+        screen.blit(text_surface, (pulseRect.x + 14, pulseRect.y - 18))
+        cooldown_text = "cooldown" if pulse["cooldown"] > 0 else "charge"
+        info_text = smallFont.render(cooldown_text, True, (170, 200, 230))
+        screen.blit(info_text, (pulseRect.x + pulseRect.width - info_text.get_width() - 10, pulseRect.y + pulseRect.height + 4))
+
+    weather = state.get("weather")
+    if weather:
+        label = smallFont.render(f"weather: {weather['name']}", True, (190, 220, 255))
+        screen.blit(label, (width - label.get_width() - 30, 130))
+        if weather.get("messageTimer", 0) > 0:
+            desc = smallFont.render(weather.get("desc", ""), True, (170, 200, 255))
+            screen.blit(desc, (width - desc.get_width() - 30, 154))
+
+    drawContracts(screen, state)
+
+    timelineHint = "TAB → hide log" if state.get("timelineVisible") else "TAB → open log"
+    hintSurface = smallFont.render(timelineHint, True, (180, 190, 210))
+    screen.blit(hintSurface, (width - hintSurface.get_width() - 30, height - 40))
 
 
 def drawMenu(screen, dialog):
@@ -319,11 +698,25 @@ def drawMenu(screen, dialog):
         screen.blit(txt, (width // 2 - txt.get_width() // 2, 260 + 40 * idx))
 
 
-def drawGameOver(screen):
+def drawGameOver(screen, state):
     msg = bigFont.render("system failure", True, heatOrange)
     tip = uiFont.render("press R to reboot the rebellion", True, (255, 255, 255))
-    screen.blit(msg, (width // 2 - msg.get_width() // 2, height // 2 - 40))
-    screen.blit(tip, (width // 2 - tip.get_width() // 2, height // 2 + 10))
+    screen.blit(msg, (width // 2 - msg.get_width() // 2, height // 2 - 60))
+    screen.blit(tip, (width // 2 - tip.get_width() // 2, height // 2 - 12))
+    telemetry = state.get("telemetry", {})
+    accuracy = 0.0
+    if telemetry.get("shotsFired"):
+        accuracy = (telemetry.get("shotsHit", 0) / telemetry["shotsFired"]) * 100
+    summary = [
+        f"time alive {formatClock(telemetry.get('timeAlive', 0.0))}",
+        f"wave cleared {state.get('wave', 1) - 1}",
+        f"damage dealt {int(telemetry.get('damageDealt', 0))}",
+        f"damage taken {int(telemetry.get('damageTaken', 0))}",
+        f"accuracy {accuracy:04.1f}%",
+    ]
+    for idx, text in enumerate(summary):
+        label = smallFont.render(text, True, (235, 220, 220))
+        screen.blit(label, (width // 2 - label.get_width() // 2, height // 2 + 40 + idx * 24))
 
 
 def drawShop(screen, state):
@@ -351,6 +744,53 @@ def drawShop(screen, state):
         screen.blit(detail, (panel.x + 32, panel.y + 90 + idx * 60))
     skipText = uiFont.render(f"{skipValue}) close shop", True, (255, 255, 255))
     screen.blit(skipText, (panel.x + 24, panel.y + panelHeight - 40))
+
+
+def drawContracts(screen, state):
+    contracts = state.get("contracts", [])
+    if not contracts:
+        return
+    visible = contracts[:3]
+    panelHeight = 50 + len(visible) * 52
+    panel = pygame.Rect(width - 300, 150, 250, panelHeight)
+    pygame.draw.rect(screen, (18, 18, 26), panel, border_radius=12)
+    pygame.draw.rect(screen, (80, 100, 150), panel, width=2, border_radius=12)
+    header = smallFont.render("contracts", True, (210, 210, 255))
+    screen.blit(header, (panel.x + 16, panel.y + 12))
+    for idx, contract in enumerate(visible):
+        y = panel.y + 40 + idx * 52
+        nameColor = (110, 255, 170) if contract.get("completed") else (220, 220, 230)
+        label = smallFont.render(contract["name"], True, nameColor)
+        screen.blit(label, (panel.x + 16, y))
+        target = contract.get("target", 1) or 1
+        progress = contract.get("progress", 0.0)
+        ratio = min(1.0, progress / target)
+        bar = pygame.Rect(panel.x + 16, y + 18, panel.width - 32, 12)
+        pygame.draw.rect(screen, (30, 30, 42), bar, border_radius=6)
+        fill = bar.copy()
+        fill.width = int(bar.width * ratio)
+        pygame.draw.rect(screen, (110, 200, 255) if not contract.get("completed") else (110, 255, 170), fill, border_radius=6)
+        detailText = f"{int(min(progress, target))}/{target}  +{contract.get('reward', 0)}c"
+        detail = smallFont.render(detailText, True, (160, 180, 200))
+        screen.blit(detail, (panel.x + 16, y + 34))
+
+
+def drawTimeline(screen, state):
+    if not state.get("timelineVisible"):
+        return
+    entries = state.get("timeline", [])
+    overlay = pygame.Surface((width - 120, 200), pygame.SRCALPHA)
+    overlay.fill((10, 10, 18, 220))
+    pygame.draw.rect(overlay, (60, 110, 150), overlay.get_rect(), width=2, border_radius=14)
+    lines = list(reversed(entries[-7:]))
+    for idx, entry in enumerate(lines):
+        timestamp = formatClock(entry.get("time", 0.0))
+        text = entry.get("text", "")
+        caption = smallFont.render(f"{timestamp} — {text}", True, (220, 220, 230))
+        overlay.blit(caption, (28, 20 + idx * 24))
+    footer = smallFont.render("log open — press TAB to close", True, (150, 190, 230))
+    overlay.blit(footer, (overlay.get_width() - footer.get_width() - 24, overlay.get_height() - 32))
+    screen.blit(overlay, (60, height - 230))
 
 
 # logic
@@ -497,7 +937,11 @@ def updatePlayerAnimation(player, dt):
 def spawnEnemy(state):
     if len(state["enemies"]) >= maxEnemies:
         return
-    state["enemies"].append(createEnemy(state["wave"]))
+    enemy = createEnemy(state["wave"])
+    weather = state.get("weather")
+    if weather:
+        enemy["speed"] *= weather.get("enemySpeed", 1.0)
+    state["enemies"].append(enemy)
 
 
 def dropCoins(state, position):
@@ -509,14 +953,20 @@ def updateWaves(state, dt):
     state["spawnTimer"] -= dt
     if state["spawnTimer"] <= 0:
         spawnEnemy(state)
-        state["spawnTimer"] = max(0.45, 1.4 - state["wave"] * 0.08)
+        weather = state.get("weather")
+        spawnFactor = weather.get("spawnFactor", 1.0) if weather else 1.0
+        state["spawnTimer"] = max(0.45, (1.4 - state["wave"] * 0.08) / max(0.4, spawnFactor))
     if state["score"] > state["wave"] * 220:
         state["wave"] += 1
         player = state["player"]
         player["health"] = min(player["maxHealth"], player["health"] + 20)
+        telemetry = state.get("telemetry", {})
+        telemetry["wavesCleared"] = state["wave"] - 1
+        logEvent(state, f"wave {state['wave']} intensifies")
     state["shopTimer"] -= dt
     if state["shopTimer"] <= 0 and not state["shopActive"]:
         openShop(state)
+    updateWeather(state, dt)
 
 
 def updateCoins(state, dt):
@@ -524,13 +974,42 @@ def updateCoins(state, dt):
     for coin in list(state["coins"]):
         updateCoin(coin, dt)
         if coin["pos"].distance_to(player["pos"]) < coin["radius"] + player["radius"]:
-            state["coinsBank"] += coin["value"] * state["coinBonus"]
+            value = coin["value"] * state["coinBonus"]
+            grantCoins(state, value)
             state["coins"].remove(coin)
             continue
         if coin["pos"].y >= cityFloor - coin["radius"] and abs(coin["vel"].y) < 5:
             coin["vel"].y = 0
 
 
+def collectIntelCache(state, cache):
+    player = state["player"]
+    grantCoins(state, cache.get("coins", 0))
+    player["health"] = min(player["maxHealth"], player["health"] + cache.get("heal", 0))
+    player["ammo"] = min(player["maxAmmo"], player["ammo"] + 2)
+    chargePulse(state, cache.get("pulse", 0))
+    logEvent(state, "intel cache cracked — supplies restocked")
+
+
+def updateIntelCaches(state, dt):
+    state["intelTimer"] -= dt
+    if state["intelTimer"] <= 0:
+        state.setdefault("intelCaches", []).append(createIntelCache())
+        state["intelTimer"] = random.uniform(18, 30)
+        logEvent(state, "intel cache pinged nearby")
+    player = state["player"]
+    for cache in list(state.get("intelCaches", [])):
+        cache["life"] -= dt
+        cache["phase"] += dt * 2.5
+        cache["bob"] = math.sin(cache["phase"]) * 8
+        if cache["life"] <= 0:
+            state["intelCaches"].remove(cache)
+            continue
+        pos = cache["pos"].copy()
+        pos.y += cache.get("bob", 0)
+        if pos.distance_to(player["pos"]) < cache["radius"] + player["radius"]:
+            state["intelCaches"].remove(cache)
+            collectIntelCache(state, cache)
 def updateShopNote(state, dt):
     if state["shopNoteTimer"] > 0:
         state["shopNoteTimer"] = max(0, state["shopNoteTimer"] - dt)
@@ -538,48 +1017,91 @@ def updateShopNote(state, dt):
             state["shopMessage"] = ""
 
 
+def updateContracts(state):
+    telemetry = state.get("telemetry", {})
+    for contract in state.get("contracts", []):
+        if contract.get("completed"):
+            continue
+        ctype = contract.get("type")
+        if ctype == "coins":
+            contract["progress"] = telemetry.get("coinsCollected", 0)
+        elif ctype == "time":
+            contract["progress"] = telemetry.get("timeAlive", 0.0)
+        elif ctype == "hits":
+            contract["progress"] = telemetry.get("shotsHit", 0)
+        elif ctype == "distance":
+            contract["progress"] = telemetry.get("distanceTraveled", 0.0)
+        elif ctype == "waves":
+            contract["progress"] = telemetry.get("wavesCleared", 0)
+        target = contract.get("target", 1)
+        if contract["progress"] >= target:
+            contract["completed"] = True
+            reward = contract.get("reward", 0)
+            state["coinsBank"] += reward
+            state["shopMessage"] = f"contract cleared: {contract['name']}"
+            state["shopNoteTimer"] = 2.0
+            logEvent(state, f"contract complete → {contract['name']} (+{reward}c)")
+
+
 def handleCollisions(state, dt):
     player = state["player"]
+    telemetry = state.get("telemetry", {})
     for enemy in list(state["enemies"]):
         for shot in list(state["shots"]):
             if enemy["pos"].distance_to(shot["pos"]) < enemy["size"] + shot["radius"]:
                 enemy["hp"] -= shot["damage"]
                 state["shots"].remove(shot)
                 state["score"] += 6
+                telemetry["shotsHit"] = telemetry.get("shotsHit", 0) + 1
+                telemetry["damageDealt"] = telemetry.get("damageDealt", 0.0) + shot["damage"]
         if enemy["hp"] <= 0:
             state["enemies"].remove(enemy)
             state["score"] += 30
             dropCoins(state, enemy["pos"])
+            chargePulse(state, 6)
             continue
         if enemy["pos"].distance_to(player["pos"]) < enemy["size"] + player["radius"]:
-            player["health"] -= 35 * dt
+            damage = 35 * dt
+            player["health"] -= damage
+            telemetry["damageTaken"] = telemetry.get("damageTaken", 0.0) + damage
             player["heat"] += 0.1 * dt * fps
     if player["health"] <= 0 and not state["gameOver"]:
         player["isDead"] = True
         player["shootTimer"] = 0
         state["gameOver"] = True
         state["shopActive"] = False
+        logEvent(state, "runner down — systems failing")
 
 
 def updateGame(state, dt):
     keys = pygame.key.get_pressed()
     player = state["player"]
-    
+    telemetry = state.get("telemetry", {})
+    telemetry["timeAlive"] = telemetry.get("timeAlive", 0.0) + dt
+    if telemetry.get("timeAlive", 0.0) >= telemetry.get("nextTimeMilestone", float("inf")):
+        logEvent(state, f"survived {int(telemetry['timeAlive'])}s out here")
+        telemetry["nextTimeMilestone"] = telemetry.get("nextTimeMilestone", 0) + 60
+
+    updatePulse(state, dt)
+
     # Handle movement
+    previousPos = player["pos"].copy()
     movePlayer(player, dt, keys)
-    
+    telemetry["distanceTraveled"] = telemetry.get("distanceTraveled", 0.0) + player["pos"].distance_to(previousPos)
+
     # Handle shooting
     mousePos = pygame.Vector2(pygame.mouse.get_pos())
     if (pygame.mouse.get_pressed()[0] or keys[pygame.K_SPACE]) and not player["isReloading"]:
         shot = createShot(player, mousePos)
         if shot:
             state["shots"].append(shot)
-    
+            telemetry["shotsFired"] = telemetry.get("shotsFired", 0) + 1
+
     # Reload with R key
     if keys[pygame.K_r] and not player["isReloading"] and player["ammo"] < player["maxAmmo"]:
         player["isReloading"] = True
         player["reload"] = 1.5  # 1.5 second reload time
-    
+
     # Update game objects
     state["shots"] = [s for s in state["shots"] if updateShot(s, dt)]
     for enemy in state["enemies"]:
@@ -587,10 +1109,11 @@ def updateGame(state, dt):
     updateCoins(state, dt)
     updateWaves(state, dt)
     handleCollisions(state, dt)
-    
+    updateContracts(state)
+    updateShopNote(state, dt)
+
     # Handle shop interactions
     if state["shopActive"]:
-        updateShopNote(state, dt)
         if keys[pygame.K_1]:
             buyOption(state, 0)
         elif keys[pygame.K_2]:
@@ -607,6 +1130,7 @@ def openShop(state):
     state["shopNoteTimer"] = 0.0
     picks = random.sample(state["shopPool"], k=min(5, len(state["shopPool"])) )
     state["shopCards"] = picks
+    logEvent(state, "shop manifests between frames")
 
 
 def closeShop(state):
@@ -614,6 +1138,7 @@ def closeShop(state):
     state["shopMessage"] = ""
     state["shopTimer"] = random.uniform(18, 28)
     state["shopNoteTimer"] = 0.0
+    logEvent(state, "shop blinks out")
 
 
 def buyOption(state, index):
@@ -630,6 +1155,7 @@ def buyOption(state, index):
     closeShop(state)
     state["shopMessage"] = f"bought {card['name']}"
     state["shopNoteTimer"] = 2.5
+    logEvent(state, f"purchased {card['name']}")
 
 
 def applyUpgrade(state, effect):
@@ -669,6 +1195,12 @@ def runGame():
                     state = buildGameState()
                 if event.key == pygame.K_SPACE and state["menu"]:
                     state["menu"] = False
+                if event.key == pygame.K_TAB:
+                    state["timelineVisible"] = not state["timelineVisible"]
+                    if state["timelineVisible"]:
+                        logEvent(state, "opened mission log")
+                if event.key == pygame.K_e:
+                    activatePulse(state)
                 if state["shopActive"]:
                     digit = event.unicode if event.unicode else ""
                     if digit.isdigit():
@@ -684,18 +1216,20 @@ def runGame():
         if not state["menu"] and not state["gameOver"] and not state["shopActive"]:
             updateGame(state, dt)
         updatePlayerAnimation(state["player"], dt)
-        drawBackground(state["screen"])
+        drawBackground(state["screen"], state.get("background"), state.get("weather"))
         drawCoins(state["screen"], state["coins"])
         drawEnemies(state["screen"], state["enemies"])
         drawShots(state["screen"], state["shots"])
         drawPlayer(state["screen"], state["player"])
         drawHud(state["screen"], state)
+        drawPulseFlash(state["screen"], state)
         if state["menu"]:
             drawMenu(state["screen"], state["dialog"])
         if state["shopActive"]:
             drawShop(state["screen"], state)
         if state["gameOver"]:
-            drawGameOver(state["screen"])
+            drawGameOver(state["screen"], state)
+        drawTimeline(state["screen"], state)
         pygame.display.flip()
 
 

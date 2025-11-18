@@ -46,9 +46,9 @@
       heat: '#ffb478'
     };
 
-      const runFrameUrls = [
-        'https://hc-cdn.hel1.your-objectstorage.com/s/v3/f057b96cf4eb7524649475deb1bbbced63d2eb98_soldier_1_run_0.png',
-        'https://hc-cdn.hel1.your-objectstorage.com/s/v3/09bf02bfc958869332475e95ecd3d7265c1bcc84_soldier_1_run_1.png',
+    const runFrameUrls = [
+      'https://hc-cdn.hel1.your-objectstorage.com/s/v3/f057b96cf4eb7524649475deb1bbbced63d2eb98_soldier_1_run_0.png',
+      'https://hc-cdn.hel1.your-objectstorage.com/s/v3/09bf02bfc958869332475e95ecd3d7265c1bcc84_soldier_1_run_1.png',
         'https://hc-cdn.hel1.your-objectstorage.com/s/v3/82a8d5787e38e0c352ed74bd632d36ad0fdcf7b8_soldier_1_run_2.png',
         'https://hc-cdn.hel1.your-objectstorage.com/s/v3/56f714d56382ef375f13214ca791470829918637_soldier_1_run_3.png',
         'https://hc-cdn.hel1.your-objectstorage.com/s/v3/b8352c549f3f1a024ddc265addf418c90417f5fc_soldier_1_run_4.png',
@@ -63,6 +63,12 @@
       'https://hc-cdn.hel1.your-objectstorage.com/s/v3/39c56624ff3d9ad9049a8700e4f30d5b8b189bb9_soldier_1_idle_3.png',
       'https://hc-cdn.hel1.your-objectstorage.com/s/v3/872a4296963746f2e8afe0a8dd91a15b91f8fb62_soldier_1_idle_4.png'
     ];
+    const backgroundImage = new Image();
+    let backgroundReady = false;
+    backgroundImage.onload = () => {
+      backgroundReady = true;
+    };
+    backgroundImage.src = 'https://hc-cdn.hel1.your-objectstorage.com/s/v3/1f433a5811ae132cbfb6cbbf46c7c30645e5246b_background.png';
     const deadUrls = [
       'https://hc-cdn.hel1.your-objectstorage.com/s/v3/f6c30ae20c0f193e59f5528702199b02688fc8c1_soldier_1_dead_0.png',
       'https://hc-cdn.hel1.your-objectstorage.com/s/v3/e6da5d24c3be03a76c7312c65ecca4b58d27fab6_soldier_1_dead_1.png',
@@ -134,14 +140,151 @@
     ];
 
     const baseDialog = [
-      'dear dystopia journal: Remote operations are still fishy', 
-      'Programmed controls are WASD',
-      'left mouse click is shoot',
-      'press SPACE to start, END NAPOLEON'
+      'dear dystopia journal: neon rain still tastes like rust',
+      'WASD moves • shift dashes • R reloads',
+      'left click/space shoots • mouse aims',
+      'press SPACE to deploy, TAB opens the log'
     ];
 
     const keys = {};
     const mouse = { x: WIDTH / 2, y: HEIGHT / 2, down: false };
+
+    function formatClock(seconds) {
+      const mins = Math.floor(seconds / 60)
+        .toString()
+        .padStart(2, '0');
+      const secs = Math.floor(seconds % 60)
+        .toString()
+        .padStart(2, '0');
+      return `${mins}:${secs}`;
+    }
+
+    const WEATHER_PATTERNS = {
+      clear: { spawnFactor: 1, enemySpeed: 1, tint: [0, 0, 0, 0], desc: 'city calm' },
+      ionRain: { spawnFactor: 1.2, enemySpeed: 0.95, tint: [25, 60, 110, 0.28], desc: 'ion rain boosts drops' },
+      emberStorm: { spawnFactor: 0.9, enemySpeed: 1.2, tint: [120, 40, 10, 0.32], desc: 'ember winds empower hostiles' },
+      glitchFog: { spawnFactor: 1.05, enemySpeed: 0.9, tint: [70, 0, 120, 0.3], desc: 'glitch fog scrambles sensors' },
+      auroraSurge: { spawnFactor: 1.1, enemySpeed: 1.05, tint: [20, 90, 80, 0.26], desc: 'aurora surge energizes everything' }
+    };
+
+    function createPulseState() {
+      return {
+        charge: 0,
+        max: 100,
+        cooldown: 0,
+        ready: false,
+        flash: 0
+      };
+    }
+
+    function createWeatherState() {
+      const base = { ...WEATHER_PATTERNS.clear };
+      return {
+        name: 'clear',
+        timer: randRange(18, 28),
+        messageTimer: 0,
+        ...base
+      };
+    }
+
+    function pickWeather(current) {
+      const names = Object.keys(WEATHER_PATTERNS).filter((name) => name !== current);
+      return names[Math.floor(Math.random() * names.length)] || current;
+    }
+
+    function applyWeather(state, name) {
+      const preset = WEATHER_PATTERNS[name] || WEATHER_PATTERNS.clear;
+      Object.assign(state.weather, preset);
+      state.weather.name = name;
+      state.weather.timer = randRange(16, 30);
+      state.weather.messageTimer = 4;
+      logEvent(state, `weather shift: ${name} — ${preset.desc}`);
+    }
+
+    function updateWeather(state, dt) {
+      state.weather.timer -= dt;
+      state.weather.messageTimer = Math.max(0, state.weather.messageTimer - dt);
+      if (state.weather.timer <= 0) {
+        applyWeather(state, pickWeather(state.weather.name));
+      }
+    }
+
+    function chargePulse(state, amount) {
+      const pulse = state.pulse;
+      if (!pulse || pulse.ready || pulse.cooldown > 0) return;
+      pulse.charge = Math.min(pulse.max, pulse.charge + amount);
+      if (pulse.charge >= pulse.max) {
+        pulse.ready = true;
+        logEvent(state, 'pulse charged — press E');
+      }
+    }
+
+    function activatePulse(state) {
+      if (state.menu || state.gameOver || state.shopActive) return;
+      const pulse = state.pulse;
+      if (!pulse.ready) return;
+      const player = state.player;
+      const radius = 260;
+      const pulseDamage = player.damage * 4 + 8;
+      state.enemies.forEach((enemy) => {
+        const dist = Math.hypot(enemy.pos.x - player.pos.x, enemy.pos.y - player.pos.y);
+        if (dist <= radius) {
+          enemy.hp -= pulseDamage;
+          enemy.speed *= 0.85;
+          enemy.mood += 40;
+        }
+      });
+      pulse.ready = false;
+      pulse.charge = 0;
+      pulse.cooldown = 6;
+      pulse.flash = 0.4;
+      logEvent(state, 'resonance pulse unleashed');
+    }
+
+    function updatePulse(state, dt) {
+      const pulse = state.pulse;
+      if (!pulse) return;
+      if (pulse.flash > 0) {
+        pulse.flash = Math.max(0, pulse.flash - dt);
+      }
+      if (pulse.cooldown > 0) {
+        pulse.cooldown = Math.max(0, pulse.cooldown - dt);
+      }
+      if (!pulse.ready && pulse.cooldown === 0) {
+        chargePulse(state, dt * 10);
+      }
+    }
+    function createTelemetry() {
+      return {
+        timeAlive: 0,
+        shotsFired: 0,
+        shotsHit: 0,
+        damageTaken: 0,
+        damageDealt: 0,
+        distanceTraveled: 0,
+        coinsCollected: 0,
+        wavesCleared: 0,
+        nextCoinMilestone: 50,
+        nextTimeMilestone: 60
+      };
+    }
+
+    function createContracts() {
+      return [
+        { name: 'fund the safehouse', type: 'coins', target: 120, reward: 12, progress: 0, completed: false },
+        { name: 'hold the plaza', type: 'time', target: 90, reward: 10, progress: 0, completed: false },
+        { name: 'precision training', type: 'hits', target: 35, reward: 14, progress: 0, completed: false },
+        { name: 'sweep the district', type: 'distance', target: 2500, reward: 10, progress: 0, completed: false }
+      ];
+    }
+
+    function logEvent(state, text) {
+      const entry = { time: state.telemetry.timeAlive, text };
+      state.timeline.push(entry);
+      if (state.timeline.length > 20) {
+        state.timeline.splice(0, state.timeline.length - 20);
+      }
+    }
 
     function makePlayer() {
       return {
@@ -178,9 +321,15 @@
       
       let dx = target.x - player.pos.x;
       let dy = target.y - player.pos.y;
-      const len = Math.hypot(dx, dy) || 1;
-      dx /= len;
-      dy /= len;
+      const rawLen = Math.hypot(dx, dy);
+      const len = rawLen || 1;
+      if (rawLen === 0) {
+        dx = player.facing || 1;
+        dy = 0;
+      } else {
+        dx /= len;
+        dy /= len;
+      }
       
       const speed = 650 + player.heat * 30;
       
@@ -261,11 +410,20 @@
         shopCards: [],
         coinBonus: 1,
         shopNoteTimer: 0,
-        dialog: baseDialog.slice()
+        dialog: baseDialog.slice(),
+        telemetry: createTelemetry(),
+        timeline: [],
+        timelineVisible: false,
+        contracts: createContracts(),
+        pulse: createPulseState(),
+        weather: createWeatherState()
       };
     }
 
     state = makeState();
+    logEvent(state, 'simulation booted in neon dusk');
+    logEvent(state, 'TAB toggles the resistance log');
+    logEvent(state, 'pulse refuels via movement + loot');
 
     function randRange(min, max) {
       return Math.random() * (max - min) + min;
@@ -406,7 +564,14 @@
         }
         const dist = Math.hypot(coin.pos.x - player.pos.x, coin.pos.y - player.pos.y);
         if (dist < coin.radius + player.radius) {
-          state.coinsBank += coin.value * state.coinBonus;
+          const value = coin.value * state.coinBonus;
+          state.coinsBank += value;
+          state.telemetry.coinsCollected += value;
+          if (state.telemetry.coinsCollected >= state.telemetry.nextCoinMilestone) {
+            logEvent(state, `funding milestone: ${state.telemetry.nextCoinMilestone} credits secured`);
+            state.telemetry.nextCoinMilestone += 50;
+          }
+          chargePulse(state, value * 2);
           state.coins.splice(i, 1);
           continue;
         }
@@ -418,7 +583,11 @@
 
     function spawnEnemy(state) {
       if (state.enemies.length >= MAX_ENEMIES) return;
-      state.enemies.push(makeEnemy(state.wave));
+      const enemy = makeEnemy(state.wave);
+      if (state.weather) {
+        enemy.speed *= state.weather.enemySpeed ?? 1;
+      }
+      state.enemies.push(enemy);
     }
 
     function dropCoins(state, pos) {
@@ -430,6 +599,7 @@
 
     function handleCollisions(state, dt) {
       const player = state.player;
+      const telemetry = state.telemetry;
       for (let i = state.enemies.length - 1; i >= 0; i--) {
         const enemy = state.enemies[i];
         for (let j = state.shots.length - 1; j >= 0; j--) {
@@ -439,17 +609,22 @@
             enemy.hp -= shot.damage;
             state.shots.splice(j, 1);
             state.score += 6;
+            telemetry.shotsHit += 1;
+            telemetry.damageDealt += shot.damage;
           }
         }
         if (enemy.hp <= 0) {
           state.enemies.splice(i, 1);
           state.score += 30;
           dropCoins(state, enemy.pos);
+          chargePulse(state, 6);
           continue;
         }
         const touch = Math.hypot(enemy.pos.x - player.pos.x, enemy.pos.y - player.pos.y) < enemy.size + player.radius;
         if (touch) {
-          player.health -= 35 * dt;
+          const damage = 35 * dt;
+          player.health -= damage;
+          telemetry.damageTaken += damage;
           player.heat = Math.min(4, player.heat + 0.1 * dt * FPS);
         }
       }
@@ -458,6 +633,7 @@
         player.shootTimer = 0;
         state.gameOver = true;
         state.shopActive = false;
+        logEvent(state, 'runner down — systems failing');
       }
     }
 
@@ -465,16 +641,20 @@
       state.spawnTimer -= dt;
       if (state.spawnTimer <= 0) {
         spawnEnemy(state);
-        state.spawnTimer = Math.max(0.45, 1.4 - state.wave * 0.08);
+        const spawnFactor = state.weather ? Math.max(0.4, state.weather.spawnFactor) : 1;
+        state.spawnTimer = Math.max(0.45, (1.4 - state.wave * 0.08) / spawnFactor);
       }
       if (state.score > state.wave * 220) {
         state.wave += 1;
         state.player.health = Math.min(state.player.maxHealth, state.player.health + 20);
+        state.telemetry.wavesCleared = state.wave - 1;
+        logEvent(state, `wave ${state.wave} intensifies`);
       }
       state.shopTimer -= dt;
       if (state.shopTimer <= 0 && !state.shopActive) {
         openShop(state);
       }
+      updateWeather(state, dt);
     }
 
     function tickNote(state, dt) {
@@ -486,11 +666,45 @@
       }
     }
 
+    function updateContracts(state) {
+      const telemetry = state.telemetry;
+      state.contracts.forEach((contract) => {
+        if (contract.completed) return;
+        switch (contract.type) {
+          case 'coins':
+            contract.progress = telemetry.coinsCollected;
+            break;
+          case 'time':
+            contract.progress = telemetry.timeAlive;
+            break;
+          case 'hits':
+            contract.progress = telemetry.shotsHit;
+            break;
+          case 'distance':
+            contract.progress = telemetry.distanceTraveled;
+            break;
+          case 'waves':
+            contract.progress = telemetry.wavesCleared;
+            break;
+          default:
+            break;
+        }
+        if (contract.progress >= contract.target) {
+          contract.completed = true;
+          state.coinsBank += contract.reward;
+          state.shopMessage = `contract cleared: ${contract.name}`;
+          state.shopNoteTimer = 2;
+          logEvent(state, `contract complete → ${contract.name} (+${contract.reward}c)`);
+        }
+      });
+    }
+
     function openShop(state) {
       state.shopActive = true;
       state.shopMessage = 'shop paused reality';
       state.shopCards = pickShopCards(shopPool, Math.min(5, shopPool.length));
       state.shopNoteTimer = 0;
+      logEvent(state, 'shop manifests between frames');
     }
 
     function closeShop(state) {
@@ -499,6 +713,7 @@
       state.shopTimer = randRange(18, 28);
       state.shopCards = [];
       state.shopNoteTimer = 0;
+      logEvent(state, 'shop blinks out');
     }
 
     function pickShopCards(pool, count) {
@@ -527,6 +742,7 @@
       closeShop(state);
       state.shopMessage = `bought ${card.name}`;
       state.shopNoteTimer = 2.5;
+      logEvent(state, `purchased ${card.name}`);
     }
 
     function applyUpgrade(state, effect) {
@@ -544,10 +760,20 @@
 
     function updateGame(state, dt) {
       const player = state.player;
-      
+      const telemetry = state.telemetry;
+      telemetry.timeAlive += dt;
+      if (telemetry.timeAlive >= telemetry.nextTimeMilestone) {
+        logEvent(state, `survived ${Math.floor(telemetry.timeAlive)}s out here`);
+        telemetry.nextTimeMilestone += 60;
+      }
+      updatePulse(state, dt);
+
       // Handle player input and moveing
+      const prevX = player.pos.x;
+      const prevY = player.pos.y;
       movePlayer(player, dt);
-      
+      telemetry.distanceTraveled += Math.hypot(player.pos.x - prevX, player.pos.y - prevY);
+
       // Handle dashing
       if (keys['ShiftLeft'] || keys['ShiftRight']) {
         dashPlayer(player);
@@ -566,9 +792,12 @@
       const wantsShot = (mouse.down || keys['Space']) && !player.isReloading;
       if (wantsShot) {
         const shot = makeShot(player, mouse);
-        if (shot) state.shots.push(shot);
+        if (shot) {
+          state.shots.push(shot);
+          telemetry.shotsFired += 1;
+        }
       }
-      
+
       // Update game systems
       updateShots(state, dt);
       updateEnemies(state, dt);
@@ -576,9 +805,15 @@
       updateCoins(state, dt);
       updateWaves(state, dt);
       tickNote(state, dt);
+      updateContracts(state);
     }
 
     function drawBackground() {
+      if (backgroundReady) {
+        ctx.drawImage(backgroundImage, 0, 0, WIDTH, HEIGHT);
+        drawWeatherOverlay();
+        return;
+      }
       ctx.fillStyle = colors.dark;
       ctx.fillRect(0, 0, WIDTH, HEIGHT);
       ctx.fillStyle = colors.mid;
@@ -592,6 +827,16 @@
         ctx.fillStyle = '#5a5a78';
         ctx.fillRect(baseX + 15, FLOOR - buildingHeight - 16, 40, 18);
       }
+      drawWeatherOverlay();
+    }
+
+    function drawWeatherOverlay() {
+      const weather = state.weather;
+      if (!weather || !weather.tint) return;
+      const [r, g, b, a] = weather.tint;
+      if (!a) return;
+      ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${a})`;
+      ctx.fillRect(0, 0, WIDTH, HEIGHT);
     }
 
     function drawPlayer() {
@@ -663,6 +908,21 @@
       });
     }
 
+    function drawPulseFlash() {
+      const pulse = state.pulse;
+      if (!pulse || pulse.flash <= 0) return;
+      const player = state.player;
+      const maxRadius = 280;
+      const gradient = ctx.createRadialGradient(player.pos.x, player.pos.y, 0, player.pos.x, player.pos.y, maxRadius);
+      const alpha = 0.4 * pulse.flash;
+      gradient.addColorStop(0, `rgba(180,255,255,${alpha})`);
+      gradient.addColorStop(1, 'rgba(180,255,255,0)');
+      ctx.fillStyle = gradient;
+      ctx.beginPath();
+      ctx.arc(player.pos.x, player.pos.y, maxRadius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
     function drawHud() {
       const player = state.player;
       const barWidth = 200;
@@ -710,6 +970,72 @@
         ctx.textAlign = 'center';
         ctx.fillText('Press R to reload', WIDTH / 2, HEIGHT - 30);
       }
+
+      const telemetry = state.telemetry;
+      const statsWidth = 300;
+      const statsHeight = 110;
+      const statsX = 20;
+      const statsY = HEIGHT - statsHeight - 30;
+      ctx.fillStyle = 'rgba(10,10,18,0.82)';
+      ctx.fillRect(statsX, statsY, statsWidth, statsHeight);
+      ctx.strokeStyle = colors.neonBlue;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(statsX, statsY, statsWidth, statsHeight);
+      const totalShots = telemetry.shotsFired || 0;
+      const accuracy = totalShots ? (telemetry.shotsHit / totalShots) * 100 : 0;
+      const stats = [
+        `time ${formatClock(telemetry.timeAlive)}`,
+        `accuracy ${accuracy.toFixed(1)}%`,
+        `distance ${Math.floor(telemetry.distanceTraveled)}m`,
+        `coins ${telemetry.coinsCollected} | hits ${telemetry.shotsHit}`
+      ];
+      ctx.font = '14px "Trebuchet MS", sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#e6e6e6';
+      stats.forEach((line, idx) => {
+        ctx.fillText(line, statsX + 12, statsY + 24 + idx * 20);
+      });
+
+      const pulse = state.pulse;
+      if (pulse) {
+        const pulseWidth = 260;
+        const pulseHeight = 20;
+        const x = WIDTH / 2 - pulseWidth / 2;
+        const y = HEIGHT - pulseHeight - 40;
+        ctx.fillStyle = 'rgba(18,22,35,0.95)';
+        ctx.fillRect(x, y, pulseWidth, pulseHeight);
+        ctx.strokeStyle = 'rgba(70,110,150,0.9)';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x, y, pulseWidth, pulseHeight);
+        const ratio = pulse.max ? Math.min(1, pulse.charge / pulse.max) : 0;
+        if (ratio > 0) {
+          ctx.fillStyle = pulse.ready ? 'rgb(150,255,200)' : 'rgb(120,210,255)';
+          ctx.fillRect(x + 3, y + 3, (pulseWidth - 6) * ratio, pulseHeight - 6);
+        }
+        ctx.fillStyle = '#dfe9ff';
+        ctx.font = '14px "Trebuchet MS", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(pulse.ready ? 'PULSE READY [E]' : 'charging resonance', WIDTH / 2, y - 6);
+        ctx.textAlign = 'left';
+      }
+
+      drawContracts();
+
+      ctx.textAlign = 'right';
+      ctx.fillStyle = '#b9c3ff';
+      ctx.fillText(state.timelineVisible ? 'TAB: hide log' : 'TAB: open log', WIDTH - 20, HEIGHT - 24);
+      const weather = state.weather;
+      if (weather) {
+        ctx.textAlign = 'right';
+        ctx.fillStyle = '#c5deff';
+        ctx.fillText(`weather: ${weather.name}`, WIDTH - 20, 130);
+        if (weather.messageTimer > 0) {
+          ctx.fillStyle = '#92baf5';
+          ctx.fillText(weather.desc, WIDTH - 20, 152);
+        }
+        ctx.textAlign = 'left';
+      }
+      ctx.textAlign = 'left';
     }
 
     function drawMenu() {
@@ -733,10 +1059,25 @@
       ctx.fillStyle = colors.heat;
       ctx.font = '60px "Trebuchet MS", sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('system failure', WIDTH / 2, HEIGHT / 2 - 20);
+      ctx.fillText('system failure', WIDTH / 2, HEIGHT / 2 - 40);
       ctx.fillStyle = '#fff';
-      ctx.font = '28px "Trebuchet MS", sans-serif';
-      ctx.fillText('Refresh the page to play again', WIDTH / 2, HEIGHT / 2 + 30);
+      ctx.font = '24px "Trebuchet MS", sans-serif';
+      ctx.fillText('Refresh the page to play again', WIDTH / 2, HEIGHT / 2 + 6);
+      const telemetry = state.telemetry;
+      const totalShots = telemetry.shotsFired || 0;
+      const accuracy = totalShots ? (telemetry.shotsHit / totalShots) * 100 : 0;
+      const summary = [
+        `time alive ${formatClock(telemetry.timeAlive)}`,
+        `wave cleared ${state.wave - 1}`,
+        `damage dealt ${Math.floor(telemetry.damageDealt)}`,
+        `damage taken ${Math.floor(telemetry.damageTaken)}`,
+        `accuracy ${accuracy.toFixed(1)}%`
+      ];
+      ctx.font = '20px "Trebuchet MS", sans-serif';
+      ctx.fillStyle = '#f4f4f4';
+      summary.forEach((line, idx) => {
+        ctx.fillText(line, WIDTH / 2, HEIGHT / 2 + 60 + idx * 26);
+      });
       ctx.textAlign = 'left';
     }
 
@@ -771,6 +1112,61 @@
       ctx.textAlign = 'left';
     }
 
+    function drawContracts() {
+      if (!state.contracts || !state.contracts.length) return;
+      const visible = state.contracts.slice(0, 3);
+      const panelWidth = 260;
+      const panelHeight = 50 + visible.length * 52;
+      const x = WIDTH - panelWidth - 24;
+      const y = 140;
+      ctx.fillStyle = 'rgba(15,15,26,0.9)';
+      ctx.fillRect(x, y, panelWidth, panelHeight);
+      ctx.strokeStyle = 'rgba(90,130,200,0.8)';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x, y, panelWidth, panelHeight);
+      ctx.font = '14px "Trebuchet MS", sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#d0d6ff';
+      ctx.fillText('contracts', x + 16, y + 24);
+      visible.forEach((contract, idx) => {
+        const rowY = y + 48 + idx * 52;
+        ctx.fillStyle = contract.completed ? '#70ffae' : '#e4e4e4';
+        ctx.fillText(contract.name, x + 16, rowY);
+        const target = contract.target || 1;
+        const ratio = Math.min(1, contract.progress / target);
+        ctx.fillStyle = 'rgba(30,30,42,0.9)';
+        ctx.fillRect(x + 16, rowY + 8, panelWidth - 32, 10);
+        ctx.fillStyle = contract.completed ? '#70ffae' : '#6ec7ff';
+        ctx.fillRect(x + 16, rowY + 8, (panelWidth - 32) * ratio, 10);
+        ctx.fillStyle = '#b8c1d1';
+        ctx.fillText(`${Math.min(contract.progress, target).toFixed(0)}/${target}  +${contract.reward}c`, x + 16, rowY + 28);
+      });
+    }
+
+    function drawTimeline() {
+      if (!state.timelineVisible) return;
+      const overlayWidth = WIDTH - 120;
+      const overlayHeight = 190;
+      const x = 60;
+      const y = HEIGHT - overlayHeight - 30;
+      ctx.fillStyle = 'rgba(8,8,18,0.85)';
+      ctx.fillRect(x, y, overlayWidth, overlayHeight);
+      ctx.strokeStyle = 'rgba(80,140,180,0.8)';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x, y, overlayWidth, overlayHeight);
+      ctx.font = '14px "Trebuchet MS", sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#e4e8ff';
+      const entries = state.timeline.slice(-7).reverse();
+      entries.forEach((entry, idx) => {
+        ctx.fillText(`${formatClock(entry.time)} — ${entry.text}`, x + 18, y + 26 + idx * 22);
+      });
+      ctx.fillStyle = '#9fc4ff';
+      ctx.textAlign = 'right';
+      ctx.fillText('journal open — TAB to close', x + overlayWidth - 16, y + overlayHeight - 16);
+      ctx.textAlign = 'left';
+    }
+
     function draw() {
       drawBackground();
       drawCoins();
@@ -778,18 +1174,29 @@
       drawShots();
       drawPlayer();
       drawHud();
+      drawPulseFlash();
       if (state.menu) drawMenu();
       if (state.shopActive) drawShop();
       if (state.gameOver) drawGameOver();
+      drawTimeline();
     }
 
     window.addEventListener('keydown', (e) => {
-      if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
+      if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab'].includes(e.code)) {
         e.preventDefault();
       }
       if (!e.repeat) keys[e.code] = true;
       if (e.code === 'Space' && state.menu) {
         state.menu = false;
+      }
+      if (e.code === 'Tab') {
+        state.timelineVisible = !state.timelineVisible;
+        if (state.timelineVisible) {
+          logEvent(state, 'opened mission log');
+        }
+      }
+      if (e.code === 'KeyE') {
+        activatePulse(state);
       }
       if (state.shopActive) {
         if (/^[0-9]$/.test(e.key)) {
